@@ -194,7 +194,7 @@ namespace KeepMeAlive.Components
             {
                 if (!RevivePolicy.IsEnabled(ReviveSource.Team)) return actions;
 
-                bool canRevive = KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value || Utils.HasReviveItem(owner.Player);
+                bool canRevive = KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED || Utils.HasReviveItem(owner.Player);
                 actions.Actions.Add(new ActionsTypesClass
                 {
                     Action = () => OnRevive(owner),
@@ -240,7 +240,7 @@ namespace KeepMeAlive.Components
                     new Vector3(0.8f, 1.8f, 0.8f), 
                     transform, 
                     null, 
-                    KeepMeAliveSettings.FREE_TEAM_HEALING.Value
+                    KeepMeAliveSettings.FREE_TEAM_HEALING
                 );
 
                 var picker = pickerGo?.GetComponent<MedPickerInteractable>();

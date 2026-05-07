@@ -49,8 +49,8 @@ namespace KeepMeAlive.Features
 
                 if (player?.ActiveHealthController != null)
                 {
-                    if (KeepMeAliveSettings.CONTUSION_EFFECT.Value) player.ActiveHealthController.DoContusion(KeepMeAliveSettings.CRITICAL_STATE_TIME.Value, 1f);
-                    if (KeepMeAliveSettings.STUN_EFFECT.Value) player.ActiveHealthController.DoStun(Math.Min(KeepMeAliveSettings.CRITICAL_STATE_TIME.Value, 20f), 1f);
+                    if (KeepMeAliveSettings.CONTUSION_EFFECT) player.ActiveHealthController.DoContusion(KeepMeAliveSettings.CRITICAL_STATE_TIME, 1f);
+                    if (KeepMeAliveSettings.STUN_EFFECT) player.ActiveHealthController.DoStun(Math.Min(KeepMeAliveSettings.CRITICAL_STATE_TIME, 20f), 1f);
                 }
 
                 DownedMovementController.ApplyDownedMovementSpeed(player, st);

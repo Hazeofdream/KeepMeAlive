@@ -62,14 +62,14 @@ namespace KeepMeAlive.Helpers
         /// <summary>Duration of god-mode invulnerability after revival, per source.</summary>
         public static float GetInvulnDuration(ReviveSource source)
             => source == ReviveSource.Self
-                ? KeepMeAliveSettings.SELF_REVIVE_INVULN_DURATION.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_INVULN_DURATION.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_INVULN_DURATION
+                : KeepMeAliveSettings.TEAM_REVIVE_INVULN_DURATION;
 
         /// <summary>Revival cooldown length after invuln ends, per source.</summary>
         public static float GetCooldownDuration(ReviveSource source)
             => source == ReviveSource.Self
-                ? KeepMeAliveSettings.SELF_REVIVE_COOLDOWN.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_COOLDOWN.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_COOLDOWN
+                : KeepMeAliveSettings.TEAM_REVIVE_COOLDOWN;
 
         /// <summary>
         /// Movement speed multiplier during invulnerability, per source.
@@ -79,8 +79,8 @@ namespace KeepMeAlive.Helpers
         public static float GetInvulnSpeedMultiplier(ReviveSource source)
         {
             float pct = source == ReviveSource.Self
-                ? KeepMeAliveSettings.SELF_REVIVE_INVULN_SPEED_PCT.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_INVULN_SPEED_PCT.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_INVULN_SPEED_PCT
+                : KeepMeAliveSettings.TEAM_REVIVE_INVULN_SPEED_PCT;
 
             if (float.IsNaN(pct) || float.IsInfinity(pct)) return 1f;
             return pct / 100f;
@@ -90,8 +90,8 @@ namespace KeepMeAlive.Helpers
         private static void RestoreBodyParts(Player player, bool isSelf)
         {
             bool enabled = isSelf
-                ? KeepMeAliveSettings.SELF_REVIVE_RESTORE_BODY_PARTS.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_RESTORE_BODY_PARTS.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_RESTORE_BODY_PARTS
+                : KeepMeAliveSettings.TEAM_REVIVE_RESTORE_BODY_PARTS;
 
             if (!enabled) return;
 
@@ -154,11 +154,11 @@ namespace KeepMeAlive.Helpers
 
         private static float GetRestorePercent(EBodyPart part, bool isSelf) => part switch
         {
-            EBodyPart.Head    => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_HEAD_PCT    : KeepMeAliveSettings.TEAM_REVIVE_HEAD_PCT).Value    / 100f,
-            EBodyPart.Chest   => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_CHEST_PCT   : KeepMeAliveSettings.TEAM_REVIVE_CHEST_PCT).Value   / 100f,
-            EBodyPart.Stomach => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_STOMACH_PCT : KeepMeAliveSettings.TEAM_REVIVE_STOMACH_PCT).Value / 100f,
-            EBodyPart.LeftArm  or EBodyPart.RightArm => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_ARMS_PCT : KeepMeAliveSettings.TEAM_REVIVE_ARMS_PCT).Value / 100f,
-            EBodyPart.LeftLeg  or EBodyPart.RightLeg => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_LEGS_PCT : KeepMeAliveSettings.TEAM_REVIVE_LEGS_PCT).Value / 100f,
+            EBodyPart.Head    => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_HEAD_PCT    : KeepMeAliveSettings.TEAM_REVIVE_HEAD_PCT)    / 100f,
+            EBodyPart.Chest   => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_CHEST_PCT   : KeepMeAliveSettings.TEAM_REVIVE_CHEST_PCT)   / 100f,
+            EBodyPart.Stomach => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_STOMACH_PCT : KeepMeAliveSettings.TEAM_REVIVE_STOMACH_PCT) / 100f,
+            EBodyPart.LeftArm  or EBodyPart.RightArm => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_ARMS_PCT : KeepMeAliveSettings.TEAM_REVIVE_ARMS_PCT) / 100f,
+            EBodyPart.LeftLeg  or EBodyPart.RightLeg => (isSelf ? KeepMeAliveSettings.SELF_REVIVE_LEGS_PCT : KeepMeAliveSettings.TEAM_REVIVE_LEGS_PCT) / 100f,
             _ => 0.5f
         };
 
@@ -171,8 +171,8 @@ namespace KeepMeAlive.Helpers
         private static void RemoveBleeds(Player player, bool isSelf)
         {
             bool enabled = isSelf
-                ? KeepMeAliveSettings.SELF_REVIVE_REMOVE_BLEEDS.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_REMOVE_BLEEDS.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_REMOVE_BLEEDS
+                : KeepMeAliveSettings.TEAM_REVIVE_REMOVE_BLEEDS;
 
             if (!enabled) return;
 
@@ -191,8 +191,8 @@ namespace KeepMeAlive.Helpers
         private static void RemoveFractures(Player player, bool isSelf)
         {
             bool enabled = isSelf
-                ? KeepMeAliveSettings.SELF_REVIVE_REMOVE_FRACTURES.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_REMOVE_FRACTURES.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_REMOVE_FRACTURES
+                : KeepMeAliveSettings.TEAM_REVIVE_REMOVE_FRACTURES;
 
             if (!enabled) return;
 
@@ -229,21 +229,21 @@ namespace KeepMeAlive.Helpers
             if (hc == null) return;
 
             bool doContusion = isSelf
-                ? KeepMeAliveSettings.SELF_REVIVE_CONTUSION_ON_REVIVE.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_CONTUSION_ON_REVIVE.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_CONTUSION_ON_REVIVE
+                : KeepMeAliveSettings.TEAM_REVIVE_CONTUSION_ON_REVIVE;
 
             if (doContusion)
             {
                 float dur = isSelf
-                    ? KeepMeAliveSettings.SELF_REVIVE_CONTUSION_DURATION.Value
-                    : KeepMeAliveSettings.TEAM_REVIVE_CONTUSION_DURATION.Value;
+                    ? KeepMeAliveSettings.SELF_REVIVE_CONTUSION_DURATION
+                    : KeepMeAliveSettings.TEAM_REVIVE_CONTUSION_DURATION;
 
                 hc.DoContusion(dur, 1f);
             }
 
             bool doPain = isSelf
-                ? KeepMeAliveSettings.SELF_REVIVE_PAIN_ON_REVIVE.Value
-                : KeepMeAliveSettings.TEAM_REVIVE_PAIN_ON_REVIVE.Value;
+                ? KeepMeAliveSettings.SELF_REVIVE_PAIN_ON_REVIVE
+                : KeepMeAliveSettings.TEAM_REVIVE_PAIN_ON_REVIVE;
 
             if (doPain)
             {

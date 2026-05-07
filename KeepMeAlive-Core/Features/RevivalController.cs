@@ -110,7 +110,7 @@ namespace KeepMeAlive.Features
             if (allowed)
             {
                 ReviveDebug.Log("TeamAuthCoroutine_Allowed", targetId, false, $"reviver={reviverId}");
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Team))
+                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Team))
                 {
                     var reviveItem = Utils.GetReviveItem(reviver);
                     if (reviveItem != null && !Utils.TryConsumeReviveItem(reviver, reviveItem, "TeamReviveReviveItem"))
@@ -202,7 +202,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             if (st.State != RMState.Reviving) yield break;
 
             ReviveDebug.Log("ReviveEffects_Start", player.ProfileId, player.IsYourPlayer, $"state={st.State} source={(ReviveSource)st.ReviveRequestedSource}");
-            if (KeepMeAliveSettings.BLOCK_UI_WHEN_DOWNED.Value) DownedUiBlocker.SetBlocked(true);
+            if (KeepMeAliveSettings.BLOCK_UI_WHEN_DOWNED) DownedUiBlocker.SetBlocked(true);
 
             if (!st.IsSilentReviveBlurActive && CameraClass.Instance != null)
             {
@@ -226,7 +226,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             yield return new WaitForSeconds(1.0f);
             ReviveDebug.Log("ReviveEffects_ConsumeStep", player.ProfileId, player.IsYourPlayer, $"source={(ReviveSource)st.ReviveRequestedSource}");
             var source = (ReviveSource)st.ReviveRequestedSource;
-            if (source == ReviveSource.Self && !KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Self))
+            if (source == ReviveSource.Self && !KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Self))
             {
                 var reviveItem = Utils.GetReviveItem(player);
                 ReviveDebug.Log("ReviveEffects_ConsumeItem", player.ProfileId, player.IsYourPlayer, $"itemFound={reviveItem != null}");
@@ -309,14 +309,14 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             if (st.State != RMState.BleedingOut) return;
             if (!string.IsNullOrEmpty(st.CurrentReviverId) && st.CurrentReviverId != player.ProfileId) return;
 
-            KeyCode key = KeepMeAliveSettings.SELF_REVIVAL_KEY.Value;
+            KeyCode key = KeepMeAliveSettings.SELF_REVIVE_KEY.Value;
             float holdDuration = RevivePolicy.GetHoldDuration(ReviveSource.Self);
 
             if (Input.GetKeyDown(key))
             {
                 TraceSelfRevive(player, st, "KeyDown", $"| key={key}");
 
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && !Utils.HasReviveItem(player))
+                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED && !Utils.HasReviveItem(player))
                 {
                     TraceSelfRevive(player, st, "BlockedNoReviveItem", "| NO_REVIVE_ITEM_REQUIRED=false and reviveItem missing");
                     VFX_UI.Text(Color.red, PlayerFacingMessages.Revive.NoReviveItemFound);
@@ -425,19 +425,19 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
                 st.SelfReviveHoldTime = 0f;
                 st.IsSelfReviving = false;
                 TraceSelfRevive(player, st, "AuthAborted", "| state changed or no longer being revived while waiting");
-                st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVAL_KEY.Value);
+                st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVE_KEY.Value);
                 yield break;
             }
 
             if (allowed)
             {
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value)
+                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED)
                 {
                     TraceSelfRevive(player, st, "ReviveItemCheck", "| NO_REVIVE_ITEM_REQUIRED=false");
                     var reviveItem = Utils.GetReviveItem(player);
                     if (reviveItem == null)
                     {
-                        st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVAL_KEY.Value);
+                        st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVE_KEY.Value);
                         st.SelfReviveAuthPending = false;
                         st.SelfReviveCommitted = false;
                         st.SelfReviveHoldTime = 0f;
@@ -478,7 +478,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
 
             if (canCleanupAttempt)
             {
-                st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVAL_KEY.Value);
+                st.SelfRevivalKeyHoldDuration.Remove(KeepMeAliveSettings.SELF_REVIVE_KEY.Value);
             }
             TraceSelfRevive(player, st, "AuthEnd", "| hold dictionary cleanup complete");
         }

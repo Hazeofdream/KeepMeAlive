@@ -216,7 +216,7 @@ namespace KeepMeAlive.Features
             {
                 bool frozen = st.State == RMState.Reviving || st.IsBeingRevived || st.IsSelfReviving || st.SelfReviveAuthPending || st.SelfReviveHoldTime > 0f;
                 float baseSpd = st.OriginalMovementSpeed > 0 ? st.OriginalMovementSpeed : player.Physical.WalkSpeedLimit;
-                player.Physical.WalkSpeedLimit = frozen ? 0f : Mathf.Max(0.1f, baseSpd * (KeepMeAliveSettings.DOWNED_MOVEMENT_SPEED.Value / 100f));
+                player.Physical.WalkSpeedLimit = frozen ? 0f : Mathf.Max(0.1f, baseSpd * (KeepMeAliveSettings.DOWNED_MOVEMENT_SPEED / 100f));
             }
             catch (Exception ex) { Plugin.LogSource.LogError($"[DownedMovement] ApplyDownedMovementSpeed error: {ex.Message}"); }
         }

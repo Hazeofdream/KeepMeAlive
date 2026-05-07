@@ -10,7 +10,7 @@ namespace KeepMeAlive.Server.Services;
 //====================[ RevivalDatabasePatchService ]====================
 [Injectable(InjectionType.Singleton)]
 public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService> logger,
-    DatabaseServer databaseServer, RevivalConfigService configService)
+    DatabaseServer databaseServer)
 {
     //====================[ Constants ]====================
     private const string TraderAssortItemId = "60dc0d93a66c41234a80aeff";
@@ -32,109 +32,11 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
                 return;
             }
 
-            PatchTraderAssort(tables);
-            PatchRevivalItemTemplate(tables);
             PatchSpecialSlotFilters(tables);
-
-            logger.Info("[KeepMeAlive.Server] Applied database patches.");
         }
         catch (Exception ex)
         {
             logger.Error($"[KeepMeAlive.Server] Database patch failed: {ex.Message}");
-        }
-    }
-
-    //====================[ Patch Steps ]====================
-    private void PatchTraderAssort(dynamic tables)
-    {
-        string traderId = ResolveTraderId(configService.Config.RevivalItem.Trading.Trader);
-        int price = Math.Max(1, configService.Config.RevivalItem.Trading.AmountRoubles);
-
-        dynamic trader = tables.Traders[traderId];
-        if (trader is null)
-        {
-            logger.Warning($"[KeepMeAlive.Server] Trader not found: {traderId}");
-            return;
-        }
-
-        if (trader.Assort == null)
-        {
-            logger.Warning($"[KeepMeAlive.Server] Trader assort missing for {traderId}");
-            return;
-        }
-
-        // Remove previous entry (idempotent patching). SPT 4.0 uses PascalCase (Id, Tpl).
-        var items = (System.Collections.IList)trader.Assort.Items;
-        for (int i = items.Count - 1; i >= 0; i--)
-        {
-            var x = items[i];
-            var id = x?.GetType().GetProperty("Id")?.GetValue(x)?.ToString();
-            if (id == TraderAssortItemId) items.RemoveAt(i);
-        }
-
-        // Create new assort item. SPT 4.0 uses strongly-typed models with Id, Tpl (PascalCase).
-        if (items.Count == 0) { logger.Warning("[KeepMeAlive.Server] Trader assort has no items; cannot add reviveItem."); return; }
-        Type? itemType = items[0]?.GetType();
-        if (itemType == null) return;
-        var newItem = Activator.CreateInstance(itemType);
-        if (newItem != null)
-        {
-            var t = newItem.GetType();
-            SetFirstExistingMemberValue(t, newItem, new[] { "Id", "_id" }, TraderAssortItemId);
-            SetFirstExistingMemberValue(t, newItem, new[] { "Template", "Tpl", "_tpl", "TemplateId" }, TraderConstants.RevivalItemTemplateId);
-            SetFirstExistingMemberValue(t, newItem, new[] { "ParentId", "parentId" }, "hideout");
-            SetFirstExistingMemberValue(t, newItem, new[] { "SlotId", "slotId" }, "hideout");
-            EnsureItemUpd(newItem);
-
-            if (HasValidTpl(newItem))
-            {
-                items.Add(newItem);
-            }
-            else
-            {
-                logger.Warning("[KeepMeAlive.Server] Skipping trader assort inject: could not set valid _tpl/Tpl on item model.");
-            }
-        }
-        else
-        {
-            logger.Warning("[KeepMeAlive.Server] Could not create assort item instance.");
-        }
-
-        // Barter/price setup
-        var barterKey = ConvertDictionaryKey(trader.Assort.BarterScheme, TraderAssortItemId);
-        trader.Assort.BarterScheme[barterKey] = BuildBarterSchemeValue(trader.Assort.BarterScheme, price, TraderConstants.RoubleTemplateId);
-
-        var loyalKey = ConvertDictionaryKey(trader.Assort.LoyalLevelItems, TraderAssortItemId);
-        trader.Assort.LoyalLevelItems[loyalKey] = 2;
-
-        // Legacy parity: log the injected assort entry details for easier diagnostics.
-        logger.Info($"[KeepMeAlive.Server] Revive Item injected into trader assort. Trader={traderId}, ItemId={TraderAssortItemId}, Price={price}");
-    }
-
-    private void PatchRevivalItemTemplate(dynamic tables)
-    {
-        dynamic item = tables.Templates.Items[TraderConstants.RevivalItemTemplateId];
-        if (item == null) { logger.Warning("[KeepMeAlive.Server] Revive Item template not found."); return; }
-
-        var props = GetFirstExistingPropertyValue(item, new[] { "Props", "_props" });
-        if (props == null) { logger.Warning("[KeepMeAlive.Server] Revive Item template has no Props."); return; }
-
-        int price = Math.Max(1, configService.Config.RevivalItem.Trading.AmountRoubles);
-        try { props.CreditsPrice = price; } catch { /* CreditsPrice may not exist */ }
-        try { props.Description = "A portable revive item used to revive yourself or others from critical condition. When in critical state, use your configured revive key to get a second chance."; } catch { }
-        try { if (props.Width != null && props.Height != null) { props.Width = 2; props.Height = 1; } } catch { }
-        try
-        {
-            var bg = GetFirstExistingPropertyValue(props, new[] { "BackgroundColor", "backgroundColor" });
-            if (bg == null)
-            {
-                var propsType = props.GetType();
-                SetFirstExistingMemberValue(propsType, props, new[] { "BackgroundColor", "backgroundColor" }, "red");
-            }
-        }
-        catch
-        {
-            // optional visual property
         }
     }
 
@@ -239,39 +141,11 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
                 continue;
             }
 
-            bool exists = false;
-            foreach (var entry in filterList)
-            {
-                if (string.Equals(entry?.ToString(), TraderConstants.RevivalItemTemplateId, StringComparison.Ordinal))
-                {
-                    exists = true;
-                    break;
-                }
-            }
-
-            if (!exists)
-            {
-                var elementType = filterList.GetType().GetGenericArguments().Length > 0
-                    ? filterList.GetType().GetGenericArguments()[0]
-                    : typeof(string);
-                filterList.Add(ConvertToTargetType(elementType, TraderConstants.RevivalItemTemplateId));
-                logger.Info($"[KeepMeAlive.Server] Added reviveItem to {slotLabel} slot filter. Template={templateId}, SlotIndex={idx}");
-            }
-
             idx++;
         }
     }
 
     //====================[ Reflection Helpers ]====================
-    private static string ResolveTraderId(string traderName)
-    {
-        if (TraderConstants.TraderIdByName.TryGetValue(traderName, out var traderId))
-        {
-            return traderId;
-        }
-
-        return TraderConstants.TraderIdByName["Therapist"];
-    }
 
     private static object ConvertDictionaryKey(object dictionary, string key)
     {

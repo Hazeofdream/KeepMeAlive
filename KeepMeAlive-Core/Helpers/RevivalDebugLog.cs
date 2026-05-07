@@ -4,13 +4,13 @@ namespace KeepMeAlive.Helpers
     internal static class RevivalDebugLog
     {
         //====================[ Flags ]====================
-        public static bool IsDebugLogsEnabled => KeepMeAliveSettings.ENABLE_DEBUG_LOGS?.Value ?? false;
+        public static bool IsDebugLogsEnabled => KeepMeAliveSettings.ENABLE_DEBUG_LOGS;
 
-        public static bool IsReviveFlowEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_REVIVE_FLOW?.Value ?? false);
+        public static bool IsReviveFlowEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_REVIVE_FLOW);
 
-        public static bool IsNetworkTraceEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_NETWORK_TRACE?.Value ?? false);
+        public static bool IsNetworkTraceEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_NETWORK_TRACE);
 
-        public static bool IsSelfReviveTraceEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_SELF_REVIVE_TRACE?.Value ?? false);
+        public static bool IsSelfReviveTraceEnabled => IsDebugLogsEnabled && (KeepMeAliveSettings.DEBUG_SELF_REVIVE_TRACE);
 
         //====================[ Logging API ]====================
         public static void LogDebug(string message)

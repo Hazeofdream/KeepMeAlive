@@ -26,7 +26,7 @@ namespace KeepMeAlive.Features
     public static class TeamMedical
     {
         //====================[ Constants & Fields ]====================
-        private static float HEAL_HOLD_TIME => KeepMeAliveSettings.TEAM_HEAL_HOLD_TIME.Value;
+        private static float HEAL_HOLD_TIME => KeepMeAliveSettings.TEAM_HEAL_HOLD_TIME;
 
         //====================[ Public API ]====================
         
@@ -244,7 +244,7 @@ namespace KeepMeAlive.Features
                 catch { patientHasFracture = patientHasDestroyed = true; } // fail-open
             }
 
-            float minHp = KeepMeAliveSettings.TEAM_HEAL_MIN_HP_RESOURCE.Value;
+            float minHp = KeepMeAliveSettings.TEAM_HEAL_MIN_HP_RESOURCE;
 
             foreach (var med in GetUsableMeds(healer, patient))
             {
@@ -336,7 +336,7 @@ namespace KeepMeAlive.Features
                         // also has a positive HealthRate stim buff (e.g. modded Salewa with regen).
                         if (category == MedCategory.Health)
                         {
-                            float minHp = KeepMeAliveSettings.TEAM_HEAL_MIN_HP_RESOURCE.Value;
+                            float minHp = KeepMeAliveSettings.TEAM_HEAL_MIN_HP_RESOURCE;
                             if (kit.HpResource < (minHp > float.Epsilon ? minHp : float.Epsilon))
                             {
                                 bool hasHealthRateBuff = false;
@@ -433,7 +433,7 @@ namespace KeepMeAlive.Features
 
                     case MedCategory.Nutrition:
                         // Food/drink need: critically low effects or any meaningful deficit.
-                        float nutritionMinDeficit = Mathf.Max(0f, KeepMeAliveSettings.TEAM_HEAL_NUTRITION_MIN_DEFICIT.Value);
+                        float nutritionMinDeficit = Mathf.Max(0f, KeepMeAliveSettings.TEAM_HEAL_NUTRITION_MIN_DEFICIT);
                         if (hc.FindActiveEffect<GInterface343>(EBodyPart.Common) != null) return true;
                         if (hc.FindActiveEffect<GInterface344>(EBodyPart.Common) != null) return true;
                         if (hc.Hydration.Current < hc.Hydration.Maximum - nutritionMinDeficit) return true;

@@ -7,7 +7,7 @@ namespace KeepMeAlive.Server.Services;
 
 //====================[ RevivalStateService ]====================
 [Injectable(InjectionType.Singleton)]
-public class RevivalStateService(ISptLogger<RevivalStateService> logger, RevivalConfigService configService)
+public class RevivalStateService(ISptLogger<RevivalStateService> logger)
 {
     //====================[ State ]====================
     private readonly Dictionary<string, RevivalStateEntry> _entries = new(StringComparer.Ordinal);

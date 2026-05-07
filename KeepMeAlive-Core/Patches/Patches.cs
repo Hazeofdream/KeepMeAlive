@@ -350,7 +350,7 @@ namespace KeepMeAlive.Patches
         {
             if (__result || item == null || !__instance.IsSpecial) return;
 
-            var revivalTpl = KeepMeAliveSettings.REVIVAL_ITEM_ID?.Value ?? "5c052e6986f7746b207bc3c9";
+            var revivalTpl = KeepMeAliveSettings.REVIVAL_ITEM_ID ?? "5c052e6986f7746b207bc3c9";
             var itemTpl = item.StringTemplateId ?? (string)item.TemplateId;
 
             if (!string.IsNullOrEmpty(revivalTpl) && string.Equals(itemTpl, revivalTpl, StringComparison.OrdinalIgnoreCase))
@@ -453,7 +453,7 @@ namespace KeepMeAlive.Features
                     }
                 }
 
-                if (KeepMeAliveSettings.DEBUG_KEYBINDS.Value) CheckTestKeybinds(__instance);
+                if (KeepMeAliveSettings.DEBUG_KEYBINDS) CheckTestKeybinds(__instance);
 
                 DownedStateController.TickDowned(__instance);
             }

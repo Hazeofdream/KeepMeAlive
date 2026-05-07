@@ -36,7 +36,7 @@ namespace KeepMeAlive.Helpers
 
             if (DownedStateController.IsPlayerInCriticalState(playerId))
             {
-                if (KeepMeAliveSettings.DEATH_BLOCK_IN_CRITICAL.Value)
+                if (KeepMeAliveSettings.DEATH_BLOCK_IN_CRITICAL)
                 {
                     // Throttle log spam - only log once every few seconds
                     float currentTime = Time.time;
@@ -69,7 +69,7 @@ namespace KeepMeAlive.Helpers
         // Hardcore headshot rule. Returns true to allow death immediately.
         public static bool ShouldAllowDeathFromHardcoreHeadshot(ActiveHealthController healthController, EDamageType damageType)
         {
-            if (!KeepMeAliveSettings.HARDCORE_MODE.Value || !KeepMeAliveSettings.HARDCORE_HEADSHOT_DEFAULT_DEAD.Value)
+            if (!KeepMeAliveSettings.HARDCORE_MODE || !KeepMeAliveSettings.HARDCORE_HEADSHOT_DEFAULT_DEAD)
             {
                 return false;
             }
@@ -82,7 +82,7 @@ namespace KeepMeAlive.Helpers
             // Config value is 0–1 (description: 0.75 = 75% survival chance).
             float roll = UnityEngine.Random.Range(0f, 1f);
 
-            if (roll < KeepMeAliveSettings.HARDCORE_CHANCE_OF_CRITICAL_STATE.Value)
+            if (roll < KeepMeAliveSettings.HARDCORE_CHANCE_OF_CRITICAL_STATE)
             {
                 Plugin.LogSource.LogInfo($"[DeathMode] Hardcore headshot spared (roll {roll:F1}). Enter critical.");
                 NotificationManagerClass.DisplayMessageNotification(

@@ -134,7 +134,7 @@ namespace KeepMeAlive.Helpers
                     return null;
                 }
 
-                string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID.Value;
+                string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID;
                 foreach (var it in items)
                 {
                     if (it?.TemplateId == templateId)
@@ -200,7 +200,7 @@ namespace KeepMeAlive.Helpers
                 return false;
             }
 
-            string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID.Value;
+            string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID;
             if (!string.Equals(reviveItem.TemplateId, templateId, StringComparison.Ordinal))
             {
                 Plugin.LogSource.LogWarning($"[{label}] Refusing to consume item {reviveItem.Id} tpl={reviveItem.TemplateId}; expected tpl={templateId}");
