@@ -106,6 +106,17 @@ namespace KeepMeAlive.Features
 
                 var mc = player.MovementContext;
                 mc.EnableSprint(false);
+
+                // Trigger the normal prone transition first so movement state remains coherent.
+                try
+                {
+                    if (!mc.IsInPronePose)
+                    {
+                        player.CurrentManagedState?.Prone();
+                    }
+                }
+                catch { }
+
                 mc.SetPoseLevel(0f, true);
                 mc.IsInPronePose = true;
 
@@ -162,11 +173,15 @@ namespace KeepMeAlive.Features
         }
 
         //====================[ Legacy Public API ]====================
-        // Full downed-entry orchestration: prone, empty hands, unhook events, vocalize, release turrets.
+        // Full downed-entry orchestration: settle active actions, prone, empty hands, vocalize, release turrets.
         public static void ApplyRevivableState(Player player)
         {
             try
             {
+                if (player == null) return;
+
+                CancelLocalManagedActions(player);
+
                 ForceProne(player);
                 ForceEmptyHands(player);
 
@@ -177,9 +192,9 @@ namespace KeepMeAlive.Features
                 }
 
                 var mc = player.MovementContext;
+                if (mc == null) return;
+
                 mc.ReleaseDoorIfInteractingWithOne();
-                mc.OnStateChanged -= player.method_17;
-                mc.PhysicalConditionChanged -= player.ProceduralWeaponAnimation.PhysicalConditionUpdated;
 
                 if (mc.StationaryWeapon != null)
                 {
@@ -190,11 +205,16 @@ namespace KeepMeAlive.Features
                         player.ReleaseHand();
                     }
                 }
+
+                if (player.IsYourPlayer && Plugin.StaticCoroutineRunner != null)
+                {
+                    Plugin.StaticCoroutineRunner.StartCoroutine(ReassertProneNextFrame(player));
+                }
             }
             catch (Exception ex) { Plugin.LogSource.LogError($"[DownedMovement] ApplyRevivableState error: {ex.Message}"); }
         }
 
-        // Re-subscribe movement and animation event hooks that were stripped when the player went down.
+        // Idempotent safety restore for movement and animation hooks.
         public static void ReattachMovementHooks(Player player)
         {
             if (player.MovementContext == null) return;
@@ -209,6 +229,78 @@ namespace KeepMeAlive.Features
             catch (Exception ex) { Plugin.LogSource.LogWarning($"[DownedMovement] Re-hook movement events error: {ex.Message}"); }
         }
 
+        // Ensure leaked local input locks from previous raids are cleared on raid start.
+        public static void ScrubDownedInputLocks()
+        {
+            try
+            {
+                RemoveIgnored(StanceCommands);
+                RemoveIgnored(WeaponSelectCommands);
+            }
+            catch (Exception ex) { Plugin.LogSource.LogWarning($"[DownedMovement] ScrubDownedInputLocks error: {ex.Message}"); }
+        }
+
+        private static void CancelLocalManagedActions(Player player)
+        {
+            if (player == null || !player.IsYourPlayer) return;
+
+            try
+            {
+                bool hasOverride = !ReferenceEquals(player.CurrentManagedState, player.CurrentState);
+                player.CurrentManagedState?.Cancel();
+                if (hasOverride)
+                {
+                    player.MovementContext?.ExitOverridenState();
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogSource.LogWarning($"[DownedMovement] Cancel movement override failed: {ex.Message}");
+            }
+
+            try { player.HealthController?.CancelApplyingItem(); }
+            catch (Exception ex) { Plugin.LogSource.LogWarning($"[DownedMovement] CancelApplyingItem failed: {ex.Message}"); }
+
+            try { player.ActiveHealthController?.RemoveMedEffect(); }
+            catch (Exception ex) { Plugin.LogSource.LogWarning($"[DownedMovement] RemoveMedEffect failed: {ex.Message}"); }
+
+            try
+            {
+                if (player.HandsController is Player.MedsController medsController)
+                {
+                    medsController.Remove();
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogSource.LogWarning($"[DownedMovement] MedsController.Remove failed: {ex.Message}");
+            }
+        }
+
+        private static IEnumerator ReassertProneNextFrame(Player player)
+        {
+            yield return null;
+
+            if (player?.MovementContext == null || !player.IsYourPlayer) yield break;
+
+            var st = RMSession.GetPlayerState(player.ProfileId);
+            if (!st.IsCritical) yield break;
+
+            try
+            {
+                var mc = player.MovementContext;
+                if (!mc.IsInPronePose || mc.PoseLevel > 0.001f)
+                {
+                    mc.SetPoseLevel(0f, true);
+                    mc.IsInPronePose = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogSource.LogWarning($"[DownedMovement] ReassertProneNextFrame failed: {ex.Message}");
+            }
+        }
+
         // Scale walk speed from downed settings, or freeze movement while revive flow is active.
         public static void ApplyDownedMovementSpeed(Player player, RMPlayer st)
         {
@@ -216,7 +308,7 @@ namespace KeepMeAlive.Features
             {
                 bool frozen = st.State == RMState.Reviving || st.IsBeingRevived || st.IsSelfReviving || st.SelfReviveAuthPending || st.SelfReviveHoldTime > 0f;
                 float baseSpd = st.OriginalMovementSpeed > 0 ? st.OriginalMovementSpeed : player.Physical.WalkSpeedLimit;
-                player.Physical.WalkSpeedLimit = frozen ? 0f : Mathf.Max(0.1f, baseSpd * (KeepMeAliveSettings.DOWNED_MOVEMENT_SPEED.Value / 100f));
+                player.Physical.WalkSpeedLimit = frozen ? 0f : baseSpd * (SyncedGameplayValues.DOWNED_MOVEMENT_SPEED / 100f);
             }
             catch (Exception ex) { Plugin.LogSource.LogError($"[DownedMovement] ApplyDownedMovementSpeed error: {ex.Message}"); }
         }

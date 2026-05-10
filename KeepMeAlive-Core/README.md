@@ -5,11 +5,12 @@ KeepMeAlive adds a second-chance mechanic to SPT. Instead of immediately dying t
 
 ## Features
 - Critical/downed state instead of immediate death in supported cases.
-- Self revive flow with configurable keybind, hold time, and revive item requirement.
+- Self revive flow with configurable local keybind and server-authoritative revive behavior.
 - Teammate revive flow for co-op sessions.
-- Configurable post-revive effects (health restore percentages, invulnerability window, optional status effects).
-- Movement limits while downed, plus optional hardcore/death-mode toggles.
-- Optional debug switches for testing and diagnosis.
+- Configurable post-revive effects (health restore percentages, invulnerability window, optional status effects) via server config.
+- Movement limits while downed, plus optional hardcore/death-mode toggles from server config.
+- Server-authoritative runtime config snapshot synced to clients (with cached fallback).
+- Optional local debug switches for testing and diagnosis.
 
 ## Requirements
 - SPT-AKI
@@ -27,20 +28,14 @@ KeepMeAlive adds a second-chance mechanic to SPT. Instead of immediately dying t
 4. Use give-up key (default: `Backspace`) if you want to forfeit immediately.
 
 ## Configuration
-After first launch, configure values in:
-`BepInEx/config/com.KeepMeAlive.cfg`
+Client local config (BepInEx):
+- `BepInEx/config/com.KeepMeAlive.cfg`
+- Contains local-only settings such as `Self Revival Key`, `Give Up Key`, and debug toggles.
 
-Common settings:
-- `Self Revival Key` (default `F`)
-- `Give Up Key` (default `Backspace`)
-- `Revival Item ID`
-- `Critical State Duration` (default `180` seconds)
-- `Self Revive Hold Time` and `Team Revive Hold Time`
-- `Self Revive Progress Duration` and `Teammate Revive Progress Duration`
-- `Self: Revival Cooldown` (default `240` seconds)
-- `Downed Movement Speed` (default `50`)
-- `Consume Revive Item on Self Revive` / `Consume Revive Item on Teammate Revive`
-- `Enable Team Revive`, `No Revive Item Required`, `Debug` toggles
+Server gameplay config (authoritative source):
+- `user/mods/KeepMeAlive/config.json` (server mod folder)
+- Contains revive mechanics, post-revive effects, team-heal tuning, protection/hardcore toggles, and revive item template/trader price data.
+- Clients fetch this snapshot at startup and use it at runtime.
 
 
 ## Troubleshooting

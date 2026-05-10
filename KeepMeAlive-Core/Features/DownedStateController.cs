@@ -39,7 +39,7 @@ namespace KeepMeAlive.Features
         private static bool CanUseSelfRevive(Player player)
         {
             if (!RevivePolicy.IsEnabled(ReviveSource.Self)) return false;
-            if (KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value) return true;
+            if (SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED) return true;
             return Utils.HasReviveItem(player);
         }
 
@@ -67,13 +67,23 @@ namespace KeepMeAlive.Features
                 return;
             }
 
-            RevivalController.StopSilentInventoryReviveAnimation(player, st, "CancelReviveState");
+            // Preserve unconscious state when canceling a self-revive attempt that
+            // didn't complete — the player is still downed and should stay locked out.
+            bool preserveUnconscious = st.State == RMState.BleedingOut
+                                       && SyncedGameplayValues.UNCONSCIOUS_ON_DOWNED
+                                       && st.IsSilentInventoryAnimActive;
+
+            if (!preserveUnconscious)
+                RevivalController.StopSilentInventoryReviveAnimation(player, st, "CancelReviveState");
 
             st.IsBeingRevived = false;
             st.IsSelfReviving = false;
             st.IsReviveProgressActive = false;
-            st.IsSilentInventoryAnimActive = false;
-            st.IsSilentReviveBlurActive = false;
+            if (!preserveUnconscious)
+            {
+                st.IsSilentInventoryAnimActive = false;
+                st.IsSilentReviveBlurActive = false;
+            }
             st.AllowWeaponEquipForReviveAnim = false;
             st.SelfReviveHoldTime = 0f;
             st.SelfReviveCommitted = false;
@@ -92,6 +102,7 @@ namespace KeepMeAlive.Features
         {
             st.ReviveCycleId++;
             st.FinalizedReviveCycleId = -1;
+            st.HasInitializedInvulnerability = false;
         }
 
         internal static bool TryCommitReviveFinalizeForCycle(string source, string playerId, RMPlayer st)
@@ -132,7 +143,7 @@ namespace KeepMeAlive.Features
                 st.PlayerDamageType = damageType;
                 RMSession.SetPlayerState(id, RMState.BleedingOut);
                 BeginNewReviveCycle(st);
-                st.CriticalTimer = KeepMeAliveSettings.CRITICAL_STATE_TIME.Value;
+                st.CriticalTimer = SyncedGameplayValues.CRITICAL_STATE_TIME;
                 st.ReviveRequestedSource = 0;
                 st.IsReviveProgressActive = false;
                 st.IsBeingRevived = false;
@@ -150,20 +161,22 @@ namespace KeepMeAlive.Features
 
                 BodyInteractableRuntime.ForceClosePicker(id);
                 RMSession.AddToCriticalPlayers(id);
-                DownedHealthAndEffectsManager.RestoreVitalsToMinimum(player);
+                if (SyncedGameplayValues.RESTORE_VITALS_ON_DOWNED)
+                    DownedHealthAndEffectsManager.RestoreVitalsToMinimum(player);
 
-                if (KeepMeAliveSettings.GHOST_MODE.Value) GhostMode.EnterGhostModeById(id);
-                if (KeepMeAliveSettings.GOD_MODE.Value) GodMode.Enable(player);
+                if (SyncedGameplayValues.GHOST_MODE) GhostMode.EnterGhostModeById(id);
+                if (SyncedGameplayValues.GOD_MODE) GodMode.Enable(player);
 
                 if (player.IsYourPlayer)
                 {
-                    if (KeepMeAliveSettings.BLOCK_UI_WHEN_DOWNED.Value) DownedUiBlocker.SetBlocked(true);
+                    if (SyncedGameplayValues.BLOCK_UI_WHEN_DOWNED) DownedUiBlocker.SetBlocked(true);
                     FikaBridge.SendBleedingOutPacket(id, st.CriticalTimer);
                     RevivalAuthority.NotifyBeginCritical(id);
                     st.ResyncCooldown = -1f;
 
                     DownedHealthAndEffectsManager.ApplyCriticalEffects(player);
                     DownedMovementController.ApplyRevivableState(player);
+                    if (SyncedGameplayValues.UNCONSCIOUS_ON_DOWNED) RevivalController.ApplyUnconsciousState(player);
                     ShowCriticalStateUI(player, st);
                 }
 
@@ -200,6 +213,7 @@ namespace KeepMeAlive.Features
             st.CurrentReviverId = string.Empty;
             st.ReviveRequestedSource = 0;
             st.FinalizedReviveCycleId = -1;
+            st.HasInitializedInvulnerability = false;
             st.LastObservedState = st.State;
             HideAllPanelsAndStop(st);
 
@@ -218,6 +232,45 @@ namespace KeepMeAlive.Features
             PlayerRestorations.RestorePlayerWeapon(player);
 
             BodyInteractableRuntime.Remove(player.ProfileId);
+        }
+
+        public static void PrepareForDeath(Player player, string reason = "PrepareForDeath")
+        {
+            if (player == null) return;
+
+            try
+            {
+                var st = RMSession.GetPlayerState(player.ProfileId);
+
+                RevivalController.StopSilentInventoryReviveAnimation(player, st, reason);
+
+                if (st.ReviveProgressCoroutine != null)
+                {
+                    Plugin.StaticCoroutineRunner.StopCoroutine(st.ReviveProgressCoroutine);
+                    st.ReviveProgressCoroutine = null;
+                }
+
+                st.IsReviveProgressActive = false;
+                st.IsBeingRevived = false;
+                st.IsSelfReviving = false;
+                st.AllowWeaponEquipForReviveAnim = false;
+                st.SelfRevivalKeyHoldDuration.Clear();
+                st.SelfReviveHoldTime = 0f;
+                st.SelfReviveCommitted = false;
+                st.SelfReviveAuthPending = false;
+                st.CurrentReviverId = string.Empty;
+
+                if (player.IsYourPlayer)
+                {
+                    DownedUiBlocker.SetBlocked(false);
+                    DownedMovementController.ReleaseProne(player);
+                    DownedMovementController.ReleaseEmptyHands(player);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogSource.LogWarning($"[DownedStateController] PrepareForDeath error: {ex.Message}");
+            }
         }
 
         //====================[ Per-Frame Ticks ]====================
@@ -303,7 +356,7 @@ namespace KeepMeAlive.Features
             try
             {
                 VFX_UI.Text(Color.red, PlayerFacingMessages.Downed.DownedBanner);
-                st.CriticalStateMainTimer = VFX_UI.TransitPanel(VFX_UI.Gradient(Color.red, Color.black), VFX_UI.Position.MiddleCenter, PlayerFacingMessages.Downed.BleedingOut, KeepMeAliveSettings.CRITICAL_STATE_TIME.Value);
+                st.CriticalStateMainTimer = VFX_UI.TransitPanel(VFX_UI.Gradient(Color.red, Color.black), VFX_UI.Position.MiddleCenter, PlayerFacingMessages.Downed.BleedingOut, SyncedGameplayValues.CRITICAL_STATE_TIME);
                 ShowSelfRevivePromptIfEligible(player);
             }
             catch (Exception ex) { Plugin.LogSource.LogError($"[DownedStateController] ShowCriticalStateUI error: {ex.Message}"); }

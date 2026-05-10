@@ -27,6 +27,7 @@ namespace KeepMeAlive.Helpers
 
             public const string MedPickerName = "Med Picker";
             public const string CancelAction = "Cancel";
+            public const string SearchAction = "Search";
         }
 
         //====================[ Team Heal ]====================

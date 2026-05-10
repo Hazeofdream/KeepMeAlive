@@ -17,5 +17,5 @@ public record ServerModMetadata : AbstractModMetadata
     public override string License { get; init; } = "MIT";
     public override string ModGuid { get; init; } = "KeepMeAliveServer";
     public override SemanticVersioning.Version Version { get; init; } = new(1, 0, 0);
-    public override SemanticVersioning.Range SptVersion { get; init; } = new(">=4.0.12");
+    public override SemanticVersioning.Range SptVersion { get; init; } = new(">=4.0.13");
 }

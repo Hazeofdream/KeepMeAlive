@@ -8,7 +8,7 @@ namespace KeepMeAlive.Helpers
     internal static class GodMode
     {
         //====================[ Queries ]====================
-        public static bool IsEnabled() => KeepMeAliveSettings.GOD_MODE.Value;
+        public static bool IsEnabled() => SyncedGameplayValues.GOD_MODE;
 
         //====================[ State Controls ]====================
         // Config-gated enable

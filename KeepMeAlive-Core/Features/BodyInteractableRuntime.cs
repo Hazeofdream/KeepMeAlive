@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using EFT;
 using KeepMeAlive.Components;
+using KeepMeAlive.Helpers;
+using UnityEngine;
 
 namespace KeepMeAlive.Features
 {
@@ -10,27 +12,37 @@ namespace KeepMeAlive.Features
     // Central runtime orchestration for body interactable lifecycle and cache.
     internal static class BodyInteractableRuntime
     {
-        //====================[ Cache & Tracked Parts ]====================
+        //====================[ Cache ]====================
         private static readonly Dictionary<string, BodyInteractable> Cache = new Dictionary<string, BodyInteractable>();
-
-        public static readonly EBodyPart[] TrackedBodyParts =
-        {
-            EBodyPart.Head,
-            EBodyPart.Chest,
-            EBodyPart.Stomach,
-            EBodyPart.LeftArm,
-            EBodyPart.RightArm,
-            EBodyPart.LeftLeg,
-            EBodyPart.RightLeg
-        };
 
         //====================[ Public API ]====================
         public static bool TryRouteActions(GamePlayerOwner owner, GInterface150 interactive, ref ActionsReturnClass result)
         {
+            // First route explicit EFT interactive targets that are ours.
+            if (TryRouteInteractive(owner, interactive, ref result)) return true;
+
+            // If EFT selected a teammate player, route directly via profile cache.
+            if (TryRouteFromInteractablePlayer(owner, ref result)) return true;
+
+            return false;
+        }
+
+        private static bool TryRouteInteractive(GamePlayerOwner owner, GInterface150 interactive, ref ActionsReturnClass result)
+        {
             if (interactive is BodyInteractable body)
             {
                 result = body.GetActions(owner);
-                return true;
+                return result.Actions.Count > 0;
+            }
+
+            if (interactive is Component component)
+            {
+                var proxy = component as BodyInteractable.BodyInteractableProxy;
+                if (proxy != null && proxy.Owner != null)
+                {
+                    result = proxy.Owner.GetActions(owner);
+                    return result.Actions.Count > 0;
+                }
             }
 
             if (interactive is MedPickerInteractable picker)
@@ -40,6 +52,33 @@ namespace KeepMeAlive.Features
             }
 
             return false;
+        }
+
+        private static bool TryRouteFromInteractablePlayer(GamePlayerOwner owner, ref ActionsReturnClass result)
+        {
+            var targetPlayer = owner?.Player?.InteractablePlayer;
+            if (targetPlayer == null) return false;
+            if (targetPlayer.IsAI || targetPlayer.AIData?.IsAI == true) return false;
+            if (!Cache.TryGetValue(targetPlayer.ProfileId, out var body) || body == null || body.Revivee == null)
+            {
+                return false;
+            }
+
+            if (body.Revivee.ProfileId != targetPlayer.ProfileId)
+            {
+                return false;
+            }
+
+            // Enforce configurable interact range for standing teammates.
+            float maxRange = SyncedGameplayValues.TEAM_HEAL_INTERACT_RANGE;
+            if (maxRange > 0f)
+            {
+                float dist = Vector3.Distance(owner.Player.Position, targetPlayer.Position);
+                if (dist > maxRange) return false;
+            }
+
+            result = body.GetActions(owner);
+            return result.Actions.Count > 0;
         }
 
         //====================[ Lifecycle ]====================
@@ -53,7 +92,6 @@ namespace KeepMeAlive.Features
                     return;
                 }
 
-                // The new AttachToPlayer is handled dynamically and directly on the Neck.
                 BodyInteractable.AttachToPlayer(player);
                 Plugin.LogSource.LogInfo($"Initiated BodyInteractable attachment routine for PlayerId {player.Id}");
             }

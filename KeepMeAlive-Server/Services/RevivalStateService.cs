@@ -45,6 +45,7 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
         lock (_sync)
         {
             entry.State = RevivalState.BleedingOut;
+            entry.Source = RevivalSourceKind.Self;
             entry.ReviverId = string.Empty;
             entry.LastUpdatedUnixSeconds = Now();
             entry.CooldownUntilUnixSeconds = 0;
@@ -60,6 +61,17 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
         lock (_sync)
         {
             var now = Now();
+            var sourceKind = ResolveSource(playerId, reviverId, source);
+
+            if (sourceKind == RevivalSourceKind.Self && !configService.Config.Gameplay.Revival.EnableSelfRevive)
+            {
+                return Denied(RevivalDeniedCode.FeatureDisabled, "Self revive is disabled by server config", entry);
+            }
+
+            if (sourceKind == RevivalSourceKind.Team && !configService.Config.Gameplay.Revival.EnableTeamRevive)
+            {
+                return Denied(RevivalDeniedCode.FeatureDisabled, "Team revive is disabled by server config", entry);
+            }
 
             if (entry.State == RevivalState.CoolDown && entry.CooldownUntilUnixSeconds > now)
             {
@@ -69,8 +81,7 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
             // Allow a self-revive to restart if the previous attempt left the server in
             // Reviving state but the animation never completed (e.g. client-side failure).
             // A self-revive is identified by playerId == reviverId.
-            bool isSelfRevive = source.Equals("self", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(playerId, reviverId, StringComparison.Ordinal);
+            bool isSelfRevive = sourceKind == RevivalSourceKind.Self;
 
             if (entry.State is RevivalState.Reviving or RevivalState.Revived)
             {
@@ -86,24 +97,21 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
                 }
             }
 
-            // Allow None state as well as BleedingOut: begin-critical is fire-and-forget and
-            // may not have arrived yet when the reviver's 2-second hold completes, especially
-            // with two players downed simultaneously. The reviver is standing over the body so
-            // we trust the client-side downed state.
+            if (entry.State == RevivalState.None)
+            {
+                logger.Warning($"[KeepMeAlive] request-revive-start denied for {playerId}: begin-critical not registered (state=None).");
+                return Denied(RevivalDeniedCode.NotDowned, "Player is not downed: begin-critical not registered", entry);
+            }
+
             if (entry.State != RevivalState.BleedingOut &&
-                entry.State != RevivalState.Reviving   &&
-                entry.State != RevivalState.None)
+                entry.State != RevivalState.Reviving)
             {
                 return Denied(RevivalDeniedCode.NotDowned, $"Player is not downed: {entry.State}", entry);
             }
 
-            if (entry.State == RevivalState.None)
-            {
-                logger.Warning($"[KeepMeAlive] request-revive-start for {playerId} arrived before begin-critical (state=None). Allowing and promoting to Reviving.");
-            }
-
             entry.State = RevivalState.Reviving;
-            entry.ReviverId = source.Equals("self", StringComparison.OrdinalIgnoreCase) ? playerId : reviverId;
+            entry.Source = sourceKind;
+            entry.ReviverId = sourceKind == RevivalSourceKind.Self ? playerId : reviverId;
             entry.LastUpdatedUnixSeconds = now;
         }
         Save();
@@ -122,6 +130,7 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
 
             entry.State = RevivalState.Revived;
             entry.ReviverId = reviverId;
+            entry.Source = ResolveSource(playerId, reviverId, string.Empty);
             entry.LastUpdatedUnixSeconds = Now();
         }
         Save();
@@ -129,9 +138,11 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
     }
 
     //====================[ Post-Revival State ]====================
-    public RevivalStateEntry MarkCooldown(string playerId, float cooldownSeconds)
+    public RevivalStateEntry MarkCooldown(string playerId)
     {
         var entry = GetOrCreate(playerId);
+        float cooldownSeconds = GetCooldownSeconds(entry.Source);
+
         lock (_sync)
         {
             entry.State = RevivalState.CoolDown;
@@ -149,6 +160,7 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
         lock (_sync)
         {
             entry.State = RevivalState.None;
+            entry.Source = RevivalSourceKind.Self;
             entry.LastUpdatedUnixSeconds = Now();
             entry.CooldownUntilUnixSeconds = 0;
             entry.ReviverId = string.Empty;
@@ -159,6 +171,25 @@ public class RevivalStateService(ISptLogger<RevivalStateService> logger, Revival
 
     //====================[ Response Helpers ]====================
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+    private static RevivalSourceKind ResolveSource(string playerId, string reviverId, string source)
+    {
+        if (string.Equals(source, "self", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(playerId, reviverId, StringComparison.Ordinal))
+        {
+            return RevivalSourceKind.Self;
+        }
+
+        return RevivalSourceKind.Team;
+    }
+
+    private float GetCooldownSeconds(RevivalSourceKind source)
+    {
+        var postRevive = configService.Config.Gameplay.PostRevive;
+        return source == RevivalSourceKind.Self
+            ? postRevive.Self.CooldownSeconds
+            : postRevive.Team.CooldownSeconds;
+    }
 
     private static RevivalAuthorityResponse Allowed(RevivalStateEntry state) =>
         new() { Success = true, State = state };

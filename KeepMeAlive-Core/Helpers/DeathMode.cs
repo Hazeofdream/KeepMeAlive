@@ -26,6 +26,12 @@ namespace KeepMeAlive.Helpers
         {
             if (player is null || player.IsAI) return false;
 
+            if (!SyncedServerConfigStore.HasAuthoritativeSnapshot)
+            {
+                RevivalDebugLog.LogDebug("[DeathMode] Authoritative runtime snapshot unavailable; fail-closed allows normal death flow.");
+                return false;
+            }
+
             string playerId = player.ProfileId;
 
             if (RMSession.HasPlayerState(playerId) && RMSession.GetPlayerState(playerId).KillOverride)
@@ -36,7 +42,7 @@ namespace KeepMeAlive.Helpers
 
             if (DownedStateController.IsPlayerInCriticalState(playerId))
             {
-                if (KeepMeAliveSettings.DEATH_BLOCK_IN_CRITICAL.Value)
+                if (SyncedGameplayValues.DEATH_BLOCK_IN_CRITICAL)
                 {
                     // Throttle log spam - only log once every few seconds
                     float currentTime = Time.time;
@@ -69,7 +75,7 @@ namespace KeepMeAlive.Helpers
         // Hardcore headshot rule. Returns true to allow death immediately.
         public static bool ShouldAllowDeathFromHardcoreHeadshot(ActiveHealthController healthController, EDamageType damageType)
         {
-            if (!KeepMeAliveSettings.HARDCORE_MODE.Value || !KeepMeAliveSettings.HARDCORE_HEADSHOT_DEFAULT_DEAD.Value)
+            if (!SyncedGameplayValues.HARDCORE_MODE || !SyncedGameplayValues.HARDCORE_HEADSHOT_DEFAULT_DEAD)
             {
                 return false;
             }
@@ -82,7 +88,7 @@ namespace KeepMeAlive.Helpers
             // Config value is 0–1 (description: 0.75 = 75% survival chance).
             float roll = UnityEngine.Random.Range(0f, 1f);
 
-            if (roll < KeepMeAliveSettings.HARDCORE_CHANCE_OF_CRITICAL_STATE.Value)
+            if (roll < SyncedGameplayValues.HARDCORE_CHANCE_OF_CRITICAL_STATE)
             {
                 Plugin.LogSource.LogInfo($"[DeathMode] Hardcore headshot spared (roll {roll:F1}). Enter critical.");
                 NotificationManagerClass.DisplayMessageNotification(
@@ -108,6 +114,8 @@ namespace KeepMeAlive.Helpers
             {
                 string id = player.ProfileId;
                 var st = RMSession.GetPlayerState(id);
+
+                DownedStateController.PrepareForDeath(player, "ForceBleedout");
 
                 st.KillOverride = true;
                 st.IsBeingRevived = false;

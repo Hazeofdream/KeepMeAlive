@@ -25,16 +25,14 @@ namespace KeepMeAlive.Features
             ReviveSource source,
             Action<bool, string> onComplete)
         {
-            bool allowed = true;
+            bool allowed = false;
             string denyReason = string.Empty;
 
             string sourceName = source == ReviveSource.Self ? "self" : "team";
             ReviveDebug.Log("AuthCoroutine_Start", playerId, false, $"reviver={reviverId} source={sourceName}");
             var task = Task.Run(() =>
             {
-                allowed = RevivePolicy.UseResilientAuthority(source)
-                    ? RevivalAuthority.TryAuthorizeReviveStartResilient(playerId, reviverId, sourceName, out var reason)
-                    : RevivalAuthority.TryAuthorizeReviveStart(playerId, reviverId, sourceName, out reason);
+                allowed = RevivalAuthority.TryAuthorizeReviveStart(playerId, reviverId, sourceName, out var reason);
                 denyReason = reason ?? string.Empty;
             });
 
@@ -110,7 +108,7 @@ namespace KeepMeAlive.Features
             if (allowed)
             {
                 ReviveDebug.Log("TeamAuthCoroutine_Allowed", targetId, false, $"reviver={reviverId}");
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Team))
+                if (!SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Team))
                 {
                     var reviveItem = Utils.GetReviveItem(reviver);
                     if (reviveItem != null && !Utils.TryConsumeReviveItem(reviver, reviveItem, "TeamReviveReviveItem"))
@@ -141,14 +139,14 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             if (player == null || st == null || !player.IsYourPlayer) return;
             ReviveDebug.Log("StopSilentInvAnim_Enter", player.ProfileId, player.IsYourPlayer, $"reason={reason} invActive={st.IsSilentInventoryAnimActive} blurActive={st.IsSilentReviveBlurActive}");
 
+            bool hadSilentInventory = st.IsSilentInventoryAnimActive;
             try
             {
                 st.AllowWeaponEquipForReviveAnim = false;
 
-                if (st.IsSilentInventoryAnimActive)
+                if (hadSilentInventory)
                 {
                     player.SetInventoryOpened(false);
-                    st.IsSilentInventoryAnimActive = false;
                     ReviveDebug.Log("SilentInvAnim_Close", player.ProfileId, player.IsYourPlayer, $"reason={reason}");
                 }
 
@@ -163,36 +161,65 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             {
                 Plugin.LogSource.LogError($"[ReviveAnim] StopSilentInventoryReviveAnimation error: {ex.Message}");
             }
+            finally
+            {
+                // Never leave command-block latches active past revive-stop intent.
+                st.AllowWeaponEquipForReviveAnim = false;
+                if (hadSilentInventory)
+                {
+                    st.IsSilentInventoryAnimActive = false;
+                }
+            }
         }
 
         //====================[ Revive Orchestration ]====================
-        internal static void ApplyKnockOut(Player player)
+        internal static void ApplyUnconsciousState(Player player)
         {
             if (player == null || !player.IsYourPlayer) return;
-            ReviveDebug.Log("ApplyKnockOut_Enter", player.ProfileId, player.IsYourPlayer, null);
+            ReviveDebug.Log("Unconscious_Enter", player.ProfileId, player.IsYourPlayer, null);
 
             try
             {
                 var st = RMSession.GetPlayerState(player.ProfileId);
 
-                // Freeze movement immediately on revive entry.
+                // Freeze movement as a physical safety net.
                 if (player.Physical != null)
                 {
                     player.Physical.WalkSpeedLimit = 0f;
                 }
 
-                // Reuse the same blur behavior used by the silent inventory revive animation.
+                // Blur the screen immediately.
                 if (!st.IsSilentReviveBlurActive && CameraClass.Instance != null)
                 {
                     CameraClass.Instance.Blur(true);
                     st.IsSilentReviveBlurActive = true;
-                    ReviveDebug.Log("KnockOut_BlurOn", player.ProfileId, player.IsYourPlayer, null);
+                    ReviveDebug.Log("Unconscious_BlurOn", player.ProfileId, player.IsYourPlayer, null);
+                }
+
+                // Activate command-block flag immediately so TranslateCommand patch
+                // starts blocking all input this frame, then delay the actual
+                // SetInventoryOpened call to let the empty-hands transition settle.
+                if (!st.IsSilentInventoryAnimActive)
+                {
+                    st.IsSilentInventoryAnimActive = true;
+                    Plugin.StaticCoroutineRunner.StartCoroutine(DelayedInventoryOpen(player, st));
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LogSource.LogError($"[ReviveAnim] ApplyKnockOut error: {ex.Message}");
+                Plugin.LogSource.LogError($"[ReviveAnim] ApplyUnconsciousState error: {ex.Message}");
             }
+        }
+
+        private static IEnumerator DelayedInventoryOpen(Player player, RMPlayer st)
+        {
+            yield return new WaitForSeconds(1.0f);
+            if (player == null || st == null) yield break;
+            if (st.State != RMState.BleedingOut) yield break;
+            if (!st.IsSilentInventoryAnimActive) yield break;
+
+            player.SetInventoryOpened(true);
+            ReviveDebug.Log("Unconscious_InvOpen", player.ProfileId, player.IsYourPlayer, null);
         }
 
         private static IEnumerator ApplyReviveEffectsCoroutine(Player player, RMPlayer st)
@@ -202,7 +229,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             if (st.State != RMState.Reviving) yield break;
 
             ReviveDebug.Log("ReviveEffects_Start", player.ProfileId, player.IsYourPlayer, $"state={st.State} source={(ReviveSource)st.ReviveRequestedSource}");
-            if (KeepMeAliveSettings.BLOCK_UI_WHEN_DOWNED.Value) DownedUiBlocker.SetBlocked(true);
+            if (SyncedGameplayValues.BLOCK_UI_WHEN_DOWNED) DownedUiBlocker.SetBlocked(true);
 
             if (!st.IsSilentReviveBlurActive && CameraClass.Instance != null)
             {
@@ -220,13 +247,12 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             ReviveDebug.Log("ReviveEffects_OpenInventory", player.ProfileId, player.IsYourPlayer, null);
             player.SetInventoryOpened(true);
             st.IsSilentInventoryAnimActive = true;
-            st.AllowWeaponEquipForReviveAnim = false;
 
             //====================[ 3. Wait 1s Then Consume Item ]====================
             yield return new WaitForSeconds(1.0f);
             ReviveDebug.Log("ReviveEffects_ConsumeStep", player.ProfileId, player.IsYourPlayer, $"source={(ReviveSource)st.ReviveRequestedSource}");
             var source = (ReviveSource)st.ReviveRequestedSource;
-            if (source == ReviveSource.Self && !KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Self))
+            if (source == ReviveSource.Self && !SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED && RevivePolicy.ShouldConsumeReviveItem(ReviveSource.Self))
             {
                 var reviveItem = Utils.GetReviveItem(player);
                 ReviveDebug.Log("ReviveEffects_ConsumeItem", player.ProfileId, player.IsYourPlayer, $"itemFound={reviveItem != null}");
@@ -264,7 +290,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             }
 
             st.IsReviveProgressActive = true;
-            ApplyKnockOut(player);
+            if (player.Physical != null) player.Physical.WalkSpeedLimit = 0f;
             Plugin.StaticCoroutineRunner.StartCoroutine(ApplyReviveEffectsCoroutine(player, st));
 
             var source = (ReviveSource)st.ReviveRequestedSource;
@@ -316,7 +342,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             {
                 TraceSelfRevive(player, st, "KeyDown", $"| key={key}");
 
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value && !Utils.HasReviveItem(player))
+                if (!SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED && !Utils.HasReviveItem(player))
                 {
                     TraceSelfRevive(player, st, "BlockedNoReviveItem", "| NO_REVIVE_ITEM_REQUIRED=false and reviveItem missing");
                     VFX_UI.Text(Color.red, PlayerFacingMessages.Revive.NoReviveItemFound);
@@ -431,7 +457,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
 
             if (allowed)
             {
-                if (!KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value)
+                if (!SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED)
                 {
                     TraceSelfRevive(player, st, "ReviveItemCheck", "| NO_REVIVE_ITEM_REQUIRED=false");
                     var reviveItem = Utils.GetReviveItem(player);
@@ -596,7 +622,7 @@ internal static void StopSilentInventoryReviveAnimation(Player player, RMPlayer 
             ReviveDebug.Log("FinishRevive_FinalizeCheck", playerId, player.IsYourPlayer, $"applyFinalize={applyFinalize} isLocal={player.IsYourPlayer}");
             if (player.IsYourPlayer && !applyFinalize)
             {
-                ReviveDebug.Log("FinishRevive_SkipDuplicate", playerId, player.IsYourPlayer, "already finalized this cycle");
+                ReviveDebug.Log("FinishRevive_SkipDuplicate", playerId, player.IsYourPlayer, $"already finalized this cycle={st.ReviveCycleId} hasInit={st.HasInitializedInvulnerability}");
                 return;
             }
 

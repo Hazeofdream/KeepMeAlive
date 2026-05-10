@@ -49,6 +49,7 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
     {
         string traderId = ResolveTraderId(configService.Config.RevivalItem.Trading.Trader);
         int price = Math.Max(1, configService.Config.RevivalItem.Trading.AmountRoubles);
+        string templateId = GetReviveTemplateId();
 
         dynamic trader = tables.Traders[traderId];
         if (trader is null)
@@ -81,7 +82,7 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
         {
             var t = newItem.GetType();
             SetFirstExistingMemberValue(t, newItem, new[] { "Id", "_id" }, TraderAssortItemId);
-            SetFirstExistingMemberValue(t, newItem, new[] { "Template", "Tpl", "_tpl", "TemplateId" }, TraderConstants.RevivalItemTemplateId);
+            SetFirstExistingMemberValue(t, newItem, new[] { "Template", "Tpl", "_tpl", "TemplateId" }, templateId);
             SetFirstExistingMemberValue(t, newItem, new[] { "ParentId", "parentId" }, "hideout");
             SetFirstExistingMemberValue(t, newItem, new[] { "SlotId", "slotId" }, "hideout");
             EnsureItemUpd(newItem);
@@ -113,7 +114,8 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
 
     private void PatchRevivalItemTemplate(dynamic tables)
     {
-        dynamic item = tables.Templates.Items[TraderConstants.RevivalItemTemplateId];
+        string templateId = GetReviveTemplateId();
+        dynamic item = tables.Templates.Items[templateId];
         if (item == null) { logger.Warning("[KeepMeAlive.Server] Revive Item template not found."); return; }
 
         var props = GetFirstExistingPropertyValue(item, new[] { "Props", "_props" });
@@ -240,9 +242,10 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
             }
 
             bool exists = false;
+            string reviveTemplateId = GetReviveTemplateId();
             foreach (var entry in filterList)
             {
-                if (string.Equals(entry?.ToString(), TraderConstants.RevivalItemTemplateId, StringComparison.Ordinal))
+                if (string.Equals(entry?.ToString(), reviveTemplateId, StringComparison.Ordinal))
                 {
                     exists = true;
                     break;
@@ -254,7 +257,7 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
                 var elementType = filterList.GetType().GetGenericArguments().Length > 0
                     ? filterList.GetType().GetGenericArguments()[0]
                     : typeof(string);
-                filterList.Add(ConvertToTargetType(elementType, TraderConstants.RevivalItemTemplateId));
+                filterList.Add(ConvertToTargetType(elementType, reviveTemplateId));
                 logger.Info($"[KeepMeAlive.Server] Added reviveItem to {slotLabel} slot filter. Template={templateId}, SlotIndex={idx}");
             }
 
@@ -271,6 +274,14 @@ public class RevivalDatabasePatchService(ISptLogger<RevivalDatabasePatchService>
         }
 
         return TraderConstants.TraderIdByName["Therapist"];
+    }
+
+    private string GetReviveTemplateId()
+    {
+        string configured = configService.Config.RevivalItem.TemplateId;
+        return string.IsNullOrWhiteSpace(configured)
+            ? TraderConstants.RevivalItemTemplateId
+            : configured;
     }
 
     private static object ConvertDictionaryKey(object dictionary, string key)

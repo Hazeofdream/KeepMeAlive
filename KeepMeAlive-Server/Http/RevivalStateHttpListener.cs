@@ -7,6 +7,7 @@ using KeepMeAlive.Server.Models.Revival;
 using KeepMeAlive.Server.Services;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Servers.Http;
 using SPTarkov.Server.Core.Utils;
 
@@ -14,7 +15,11 @@ namespace KeepMeAlive.Server.Http;
 
 //====================[ RevivalStateHttpListener ]====================
 [Injectable(TypePriority = 0)]
-public class RevivalStateHttpListener(RevivalStateService stateService, HttpResponseUtil httpResponseUtil) : IHttpListener
+public class RevivalStateHttpListener(
+    RevivalStateService stateService,
+    RevivalConfigService configService,
+    HttpResponseUtil httpResponseUtil,
+    ISptLogger<RevivalStateHttpListener> logger) : IHttpListener
 {
     //====================[ Constants ]====================
     private const string BasePath = "/kaikinoodles/keepmealive/state/";
@@ -32,6 +37,11 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
         var body = await ReadBodyAsync(context.Request);
         var info = ParseJson(body);
 
+        if (info == null)
+        {
+            logger.Warning($"[KeepMeAlive.Server] Invalid JSON payload for route {path}. Body length={body.Length}");
+        }
+
         string json;
         try
         {
@@ -40,7 +50,7 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
         }
         catch (Exception ex)
         {
-            _ = ex;
+            logger.Warning($"[KeepMeAlive.Server] Authority route failed for {path}: {ex.Message}");
             json = JsonSerializer.Serialize(new RevivalAuthorityResponse
             {
                 Success = false,
@@ -55,7 +65,7 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
     }
 
     //====================[ Request Parsing ]====================
-    private static async Task<string> ReadBodyAsync(HttpRequest request)
+    private async Task<string> ReadBodyAsync(HttpRequest request)
     {
         if (request.ContentLength is null or 0)
             return "{}";
@@ -75,9 +85,10 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
                 using var zlibReader = new StreamReader(zlibStream, Encoding.UTF8);
                 body = await zlibReader.ReadToEndAsync();
             }
-            catch
+            catch (Exception ex)
             {
                 // If decompression fails, fall back to plain read to avoid hard-failing the route.
+                logger.Warning($"[KeepMeAlive.Server] Decompression failed for authority request: {ex.Message}");
                 request.Body.Position = 0;
             }
         }
@@ -119,15 +130,6 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
         return v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : v.ToString();
     }
 
-    private static float GetFloat(Dictionary<string, JsonElement>? d, string key)
-    {
-        if (d == null || !d.TryGetValue(key, out var v))
-            return 0f;
-        if (v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f))
-            return f;
-        return float.TryParse(v.ToString(), out var parsed) ? parsed : 0f;
-    }
-
     //====================[ Route Dispatch ]====================
     private object Dispatch(string path, Dictionary<string, JsonElement>? info)
     {
@@ -152,7 +154,7 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
 
         if (path.EndsWith("end-invulnerability", StringComparison.OrdinalIgnoreCase))
         {
-            var state = stateService.MarkCooldown(GetStr(info, "PlayerId"), GetFloat(info, "DurationSeconds"));
+            var state = stateService.MarkCooldown(GetStr(info, "PlayerId"));
             return new RevivalAuthorityResponse { Success = true, State = state };
         }
 
@@ -166,6 +168,11 @@ public class RevivalStateHttpListener(RevivalStateService stateService, HttpResp
         {
             var state = stateService.GetOrCreate(GetStr(info, "PlayerId"));
             return new RevivalAuthorityResponse { Success = true, State = state };
+        }
+
+        if (path.EndsWith("get-runtime-config", StringComparison.OrdinalIgnoreCase))
+        {
+            return configService.GetRuntimeSnapshot();
         }
 
         throw new InvalidOperationException($"Unknown route: {path}");

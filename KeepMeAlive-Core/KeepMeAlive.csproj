@@ -9,7 +9,7 @@
     <Deterministic>true</Deterministic>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <CoreRefDir>$(MSBuildThisFileDirectory)..\Build\Lib\Fika-Headless-1.4.11\References\</CoreRefDir>
+    <CoreRefDir>$(MSBuildThisFileDirectory)..\Build\Lib\Fika-Headless-1.4.13\Fika-Headless-1.4.13\References\</CoreRefDir>
     <BepInExCoreDir>$(MSBuildThisFileDirectory)..\Build\Lib\spt-4.0.12\static-assets-csharp\BepInEx\core\</BepInExCoreDir>
     <DecompLibDir>$(MSBuildThisFileDirectory)..\Build\Decomp\Assembly-CSharp\lib\</DecompLibDir>
   </PropertyGroup>

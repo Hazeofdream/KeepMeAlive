@@ -10,6 +10,7 @@ namespace KeepMeAlive.Helpers
     {
         //====================[ Constants & Fields ]====================
         private const string BaseRoute = "/kaikinoodles/keepmealive/state";
+        private const string RuntimeConfigRoute = BaseRoute + "/get-runtime-config";
 
         //====================[ Network Models ]====================
         private sealed class AuthorityRequest
@@ -42,24 +43,14 @@ namespace KeepMeAlive.Helpers
                 Source = source
             }, out var response);
 
-            reason = ok ? MapDenyReason(response) : string.Empty;
-            return ok ? (response?.Success ?? true) : true;
-        }
+            if (!ok || response == null)
+            {
+                reason = PlayerFacingMessages.ReviveDenied.AuthorizationFailed;
+                return false;
+            }
 
-        // Resilient path used by async callers to keep gameplay responsive even
-        // when the backend endpoint is unavailable.
-        public static bool TryAuthorizeReviveStartResilient(string playerId, string reviverId, string source, out string reason)
-        {
-            try
-            {
-                return TryAuthorizeReviveStart(playerId, reviverId, source, out reason);
-            }
-            catch (Exception ex)
-            {
-                Plugin.LogSource.LogWarning($"[RevivalAuthority] Resilient authorize fallback for {playerId}: {ex.Message}");
-                reason = string.Empty;
-                return true;
-            }
+            reason = MapDenyReason(response);
+            return response.Success;
         }
 
         public static void NotifyReviveComplete(string playerId, string reviverId) =>
@@ -70,6 +61,35 @@ namespace KeepMeAlive.Helpers
 
         public static void NotifyReset(string playerId) =>
             Task.Run(() => Send($"{BaseRoute}/reset", new AuthorityRequest { PlayerId = playerId }));
+
+        public static bool TryGetRuntimeConfig(out SyncedRuntimeConfigSnapshot snapshot, out string reason)
+        {
+            snapshot = null;
+            reason = string.Empty;
+
+            try
+            {
+                string playerId = Utils.GetYourPlayer()?.ProfileId ?? string.Empty;
+                snapshot = Utils.ServerRoute<SyncedRuntimeConfigSnapshot>(RuntimeConfigRoute, new AuthorityRequest
+                {
+                    PlayerId = playerId
+                });
+
+                if (snapshot?.Config == null)
+                {
+                    reason = "Runtime config snapshot response was empty.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = $"Runtime config snapshot request failed: {ex.Message}";
+                RevivalDebugLog.LogDebug($"[RevivalAuthority] Runtime config route unavailable: {ex.Message}");
+                return false;
+            }
+        }
 
         //====================[ Private Send Helpers ]====================
         private static bool Send(string route, object data) => Send(route, data, out _);
@@ -101,21 +121,15 @@ namespace KeepMeAlive.Helpers
             {
                 case 1:
                     return PlayerFacingMessages.ReviveDenied.Cooldown;
+                case 5:
+                    return PlayerFacingMessages.ReviveDenied.AuthorizationFailed;
                 case 2:
                 case 3:
                 case 4:
-                case 5:
-                    return string.Empty;
+                    return string.IsNullOrWhiteSpace(response.Reason) ? string.Empty : response.Reason;
             }
 
-            // Backward-compatible fallback for older servers that do not provide DenialCode.
-            string raw = response.Reason ?? string.Empty;
-            if (raw.StartsWith("Player on cooldown", StringComparison.OrdinalIgnoreCase))
-            {
-                return PlayerFacingMessages.ReviveDenied.Cooldown;
-            }
-
-            return string.Empty;
+            return string.IsNullOrWhiteSpace(response.Reason) ? string.Empty : response.Reason;
         }
     }
 }

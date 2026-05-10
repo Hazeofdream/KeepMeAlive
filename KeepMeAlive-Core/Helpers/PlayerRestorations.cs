@@ -64,8 +64,8 @@ namespace KeepMeAlive.Helpers
             
             try
             {
-                // Force hands to equip something if they are empty
-                if (player.HandsController is EFT.Player.EmptyHandsController)
+                // Force hands to equip something if they are empty or stuck in a non-weapon state
+                if (!(player.HandsController is IFirearmHandsController))
                 {
                     player.SetFirstAvailableItem((Result<IHandsController> _) => { });
                 }

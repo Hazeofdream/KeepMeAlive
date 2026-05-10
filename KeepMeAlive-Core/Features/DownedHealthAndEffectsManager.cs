@@ -20,7 +20,7 @@ namespace KeepMeAlive.Features
         };
 
         //====================[ Public API ]====================
-        // Restore destroyed body parts to 1 HP so the player does not instantly die on state transition.
+        // Restore destroyed body parts to 1 HP on downed entry (toggleable via config).
         public static void RestoreVitalsToMinimum(Player player)
         {
             if (player?.ActiveHealthController is not { } hc) return;
@@ -49,8 +49,8 @@ namespace KeepMeAlive.Features
 
                 if (player?.ActiveHealthController != null)
                 {
-                    if (KeepMeAliveSettings.CONTUSION_EFFECT.Value) player.ActiveHealthController.DoContusion(KeepMeAliveSettings.CRITICAL_STATE_TIME.Value, 1f);
-                    if (KeepMeAliveSettings.STUN_EFFECT.Value) player.ActiveHealthController.DoStun(Math.Min(KeepMeAliveSettings.CRITICAL_STATE_TIME.Value, 20f), 1f);
+                    if (SyncedGameplayValues.CONTUSION_EFFECT) player.ActiveHealthController.DoContusion(SyncedGameplayValues.CRITICAL_STATE_TIME, 1f);
+                    if (SyncedGameplayValues.STUN_EFFECT) player.ActiveHealthController.DoStun(Math.Min(SyncedGameplayValues.CRITICAL_STATE_TIME, SyncedGameplayValues.MAX_STUN_DURATION), 1f);
                 }
 
                 DownedMovementController.ApplyDownedMovementSpeed(player, st);

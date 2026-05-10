@@ -37,12 +37,7 @@ namespace KeepMeAlive.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GamePlayerOwner owner, GInterface150 interactive, ref ActionsReturnClass __result)
         {
-            if (BodyInteractableRuntime.TryRouteActions(owner, interactive, ref __result))
-            {
-                return false;
-            }
-
-            return true;
+            return !BodyInteractableRuntime.TryRouteActions(owner, interactive, ref __result);
         }
     }
 
@@ -68,10 +63,12 @@ namespace KeepMeAlive.Patches
 
                 // Cache the block evaluation so we don't calculate it twice
                 bool shouldBlockDeath = DeathMode.ShouldBlockDeath(player, damageType);
+                bool hasState = RMSession.HasPlayerState(playerId);
+                RMState state = RMState.None;
 
-                if (RMSession.HasPlayerState(playerId))
+                if (hasState)
                 {
-                    var state = RMSession.GetPlayerState(playerId).State;
+                    state = RMSession.GetPlayerState(playerId).State;
                     if (state is RMState.BleedingOut or RMState.Reviving or RMState.Revived)
                     {
                         if (!player.IsYourPlayer && state == RMState.BleedingOut) return false;
@@ -83,6 +80,11 @@ namespace KeepMeAlive.Patches
                 {
                     DownedStateController.SetPlayerCriticalState(player, true, damageType);
                     return false;
+                }
+
+                if (hasState && player.IsYourPlayer && state is RMState.BleedingOut or RMState.Reviving)
+                {
+                    DownedStateController.PrepareForDeath(player, "DeathPatchAllowDeath");
                 }
 
                 return true;
@@ -230,6 +232,10 @@ namespace KeepMeAlive.Patches
                 RMSession.GetPlayerState(Singleton<GameWorld>.Instance.MainPlayer.ProfileId);
                 Plugin.LogSource.LogDebug("Raid started - MainPlayer state initialized.");
 
+                SyncedServerConfigStore.EnsureSnapshot("game-started");
+
+                DownedMovementController.ScrubDownedInputLocks();
+
                 // Inject reviveItem icon eagerly so FikaHealthBar nameplates can show it.
                 // FikaHealthBar.AddEffect() looks up effect.Type in _effectIcons at the
                 // moment EffectAddedEvent fires ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â if the icon isn't injected yet it's
@@ -350,7 +356,7 @@ namespace KeepMeAlive.Patches
         {
             if (__result || item == null || !__instance.IsSpecial) return;
 
-            var revivalTpl = KeepMeAliveSettings.REVIVAL_ITEM_ID?.Value ?? "5c052e6986f7746b207bc3c9";
+            var revivalTpl = SyncedGameplayValues.REVIVAL_ITEM_ID;
             var itemTpl = item.StringTemplateId ?? (string)item.TemplateId;
 
             if (!string.IsNullOrEmpty(revivalTpl) && string.Equals(itemTpl, revivalTpl, StringComparison.OrdinalIgnoreCase))
@@ -361,10 +367,10 @@ namespace KeepMeAlive.Patches
     }
 
     //====================[ InventoryScreenInputBlockPatch ]====================
-    // Prevents the local player from opening the real inventory screen while the
-    // silent revive animation is playing.  If they could open it, closing it would
-    // fire the EftGamePlayerOwner exit callback which calls SetInventoryOpened(false)
-    // and terminate the revive animation mid-revive.
+    // Prevents the local player from toggling the inventory screen while it is
+    // being held open programmatically (unconscious state or silent revive anim).
+    // Without this the player could press Tab to close it, which fires the
+    // EftGamePlayerOwner exit callback and breaks the expected lock-out.
     internal class InventoryScreenInputBlockPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() =>
@@ -378,7 +384,7 @@ namespace KeepMeAlive.Patches
                 if (__instance?.Player == null) return true;
                 if (!RMSession.HasPlayerState(__instance.Player.ProfileId)) return true;
                 var st = RMSession.GetPlayerState(__instance.Player.ProfileId);
-                if (st.State == RMState.Reviving || st.IsSilentInventoryAnimActive)
+                if (st.IsSilentInventoryAnimActive)
                 {
                     __result = false;
                     return false;
@@ -393,8 +399,9 @@ namespace KeepMeAlive.Patches
     }
 
     //====================[ SilentInventoryCommandBlockPatch ]====================
-    // While silent inventory revive animation is active, consume all gameplay commands
-    // so left-click cannot fire and break the expected inventory behavior.
+    // While the inventory is being held open programmatically (unconscious state
+    // or silent revive animation), consume all gameplay commands so the player
+    // cannot fire, move, or otherwise interact.
     internal class SilentInventoryCommandBlockPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() =>
@@ -640,6 +647,31 @@ namespace KeepMeAlive.Features
             {
                 Plugin.LogSource.LogError($"[ReviveItemCooldownIconPatch] LoadReviveItemSprite error: {ex}");
                 return null;
+            }
+        }
+    }
+
+    //====================[ DownedPlayerLootPatch ]====================
+    // Patches GClass2234.method_0 so the viewer's search controller doesn't
+    // treat a downed (BleedingOut) player's inventory as "another alive player's
+    // inaccessible items."  Without this, GetObserverItemState returns NonExistent
+    // for every item owned by a living PlayerInventoryController that isn't the
+    // viewer's own — which blocks all loot-screen interaction.
+    internal class DownedPlayerLootPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(GClass2234), nameof(GClass2234.method_0));
+
+        [PatchPostfix]
+        private static void PatchPostfix(ref bool __result, ItemAddress address)
+        {
+            if (!__result) return;
+
+            var owner = address.GetOwnerOrNull();
+            if (owner is Player.PlayerInventoryController pic
+                && RMSession.IsPlayerCritical(pic.Player_0.ProfileId))
+            {
+                __result = false;
             }
         }
     }

@@ -12,8 +12,8 @@ namespace KeepMeAlive.Helpers
         {
             return source switch
             {
-                ReviveSource.Self => KeepMeAliveSettings.SELF_REVIVAL_ENABLED.Value,
-                ReviveSource.Team => KeepMeAliveSettings.TEAM_REVIVE_ENABLED.Value,
+                ReviveSource.Self => SyncedGameplayValues.SELF_REVIVAL_ENABLED,
+                ReviveSource.Team => SyncedGameplayValues.TEAM_REVIVE_ENABLED,
                 _ => true
             };
         }
@@ -22,8 +22,8 @@ namespace KeepMeAlive.Helpers
         {
             float configured = source switch
             {
-                ReviveSource.Self => KeepMeAliveSettings.SELF_REVIVE_HOLD_TIME.Value,
-                ReviveSource.Team => KeepMeAliveSettings.TEAM_REVIVE_HOLD_TIME.Value,
+                ReviveSource.Self => SyncedGameplayValues.SELF_REVIVE_HOLD_TIME,
+                ReviveSource.Team => SyncedGameplayValues.TEAM_REVIVE_HOLD_TIME,
                 _ => 2f
             };
             return Mathf.Max(0.1f, configured);
@@ -33,8 +33,8 @@ namespace KeepMeAlive.Helpers
         {
             float configured = source switch
             {
-                ReviveSource.Self => KeepMeAliveSettings.SELF_REVIVE_ANIMATION_DURATION.Value,
-                ReviveSource.Team => KeepMeAliveSettings.TEAMMATE_REVIVE_ANIMATION_DURATION.Value,
+                ReviveSource.Self => SyncedGameplayValues.SELF_REVIVE_ANIMATION_DURATION,
+                ReviveSource.Team => SyncedGameplayValues.TEAMMATE_REVIVE_ANIMATION_DURATION,
                 _ => 3f
             };
             return Mathf.Max(3f, configured);
@@ -44,16 +44,11 @@ namespace KeepMeAlive.Helpers
         {
             return source switch
             {
-                ReviveSource.Self => KeepMeAliveSettings.CONSUME_REVIVE_ITEM_ON_SELF_REVIVE.Value,
-                ReviveSource.Team => KeepMeAliveSettings.CONSUME_REVIVE_ITEM_ON_TEAMMATE_REVIVE.Value,
+                ReviveSource.Self => SyncedGameplayValues.CONSUME_REVIVE_ITEM_ON_SELF_REVIVE,
+                ReviveSource.Team => SyncedGameplayValues.CONSUME_REVIVE_ITEM_ON_TEAMMATE_REVIVE,
                 _ => false
             };
         }
 
-        //====================[ Authority Routing ]====================
-        public static bool UseResilientAuthority(ReviveSource source)
-        {
-            return source == ReviveSource.Team;
-        }
     }
 }

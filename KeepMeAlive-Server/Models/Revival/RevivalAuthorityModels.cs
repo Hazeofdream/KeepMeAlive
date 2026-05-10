@@ -1,3 +1,5 @@
+using KeepMeAlive.Server;
+
 namespace KeepMeAlive.Server.Models.Revival;
 
 //====================[ RevivalState ]====================
@@ -10,11 +12,19 @@ public enum RevivalState
     CoolDown = 4
 }
 
+//====================[ RevivalSourceKind ]====================
+public enum RevivalSourceKind
+{
+    Self = 0,
+    Team = 1
+}
+
 //====================[ RevivalStateEntry ]====================
 public record RevivalStateEntry
 {
     public string PlayerId { get; init; } = string.Empty;
     public RevivalState State { get; set; } = RevivalState.None;
+    public RevivalSourceKind Source { get; set; } = RevivalSourceKind.Self;
     public string ReviverId { get; set; } = string.Empty;
     public long LastUpdatedUnixSeconds { get; set; }
     public long CooldownUntilUnixSeconds { get; set; }
@@ -37,5 +47,15 @@ public enum RevivalDeniedCode
     InvalidState = 2,
     NotDowned = 3,
     CompleteInvalidState = 4,
-    ServerError = 5
+    ServerError = 5,
+    FeatureDisabled = 6
+}
+
+//====================[ RevivalRuntimeConfigSnapshot ]====================
+public record RevivalRuntimeConfigSnapshot
+{
+    public int SchemaVersion { get; init; }
+    public string ConfigHash { get; init; } = string.Empty;
+    public long GeneratedAtUnixSeconds { get; init; }
+    public RevivalServerConfig Config { get; init; } = new();
 }

@@ -1,10 +1,15 @@
 //====================[ Imports ]====================
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
 using System.Threading;
 using EFT;
 using EFT.Interactive;
+using EFT.InventoryLogic;
 using EFT.UI;
+using HarmonyLib;
+using KeepMeAlive.Components;
 using KeepMeAlive.Features;
 using KeepMeAlive.Fika;
 using KeepMeAlive.Helpers;
@@ -15,34 +20,65 @@ namespace KeepMeAlive.Components
     //====================[ BodyInteractable ]====================
     public class BodyInteractable : InteractableObject
     {
+        //====================[ Nested Types ]====================
+        // Lightweight marker placed on each bone-parented collider child.
+        // The game's raycast hits the child and routes actions back to the owner.
+        public sealed class BodyInteractableProxy : InteractableObject
+        {
+            public BodyInteractable Owner;
+        }
+
         //====================[ Fields ]====================
         public Player Revivee { get; set; }
         public bool HasActivePicker { get; set; }
         
-        private BoxCollider _collider;
+        private readonly List<Collider> _colliders = new List<Collider>();
         private MedPickerInteractable _activeMedPicker;
-        private float _nextCheckTime;
-        
-        // Configuration
-        private const float INTERACTION_MAX_DISTANCE_SQ = 9f; // 3 meters squared
-        private const float UPDATE_INTERVAL = 1.0f; // Slower update baseline
+        private bool _isLootScreenOpen;
+        private readonly HashSet<Slot> _slotsWeLockedForLoot = new HashSet<Slot>();
+
+        private static readonly FieldInfo SlotLockedField =
+            AccessTools.Field(typeof(Slot), "<Locked>k__BackingField");
         
         public static float ReviveHoldTime => RevivePolicy.GetHoldDuration(ReviveSource.Team);
+
+        //====================[ Bone Collider Whitelist ]====================
+        private static readonly HashSet<EBodyPartColliderType> ColliderWhitelist = new HashSet<EBodyPartColliderType>
+        {
+            // Chest
+            EBodyPartColliderType.RibcageUp,
+            EBodyPartColliderType.RibcageLow,
+            EBodyPartColliderType.RightSideChestUp,
+            EBodyPartColliderType.LeftSideChestUp,
+            EBodyPartColliderType.RightSideChestDown,
+            EBodyPartColliderType.LeftSideChestDown,
+            EBodyPartColliderType.SpineTop,
+            EBodyPartColliderType.NeckFront,
+            EBodyPartColliderType.NeckBack,
+            // Stomach
+            EBodyPartColliderType.Pelvis,
+            EBodyPartColliderType.PelvisBack,
+            EBodyPartColliderType.SpineDown,
+            // Upper Arms
+            EBodyPartColliderType.LeftUpperArm,
+            EBodyPartColliderType.RightUpperArm,
+            // Upper Legs
+            EBodyPartColliderType.LeftThigh,
+            EBodyPartColliderType.RightThigh,
+        };
+
+        // Slightly expand mirrored colliders to bias interaction raycasts toward body hitboxes.
+        private const float MirroredColliderInflation = 1.08f;
 
         //====================[ Unity Lifecycle ]====================
         private void Awake()
         {
-            _collider = GetComponent<BoxCollider>();
-            if (_collider != null)
-            {
-                _collider.enabled = false;
-            }
             gameObject.layer = LayerMask.NameToLayer("Interactive");
         }
 
         private void Update()
         {
-            if (Revivee == null || _collider == null) return;
+            if (Revivee == null || _colliders.Count == 0) return;
 
             // Safety: bots should never expose revival/team-heal interactables.
             if (Revivee.IsAI || Revivee.AIData?.IsAI == true)
@@ -50,51 +86,15 @@ namespace KeepMeAlive.Components
                 try { Destroy(gameObject); } catch { }
                 return;
             }
-            
-            // Throttle checks
-            if (Time.time < _nextCheckTime) return;
-            _nextCheckTime = Time.time + UPDATE_INTERVAL;
 
-            // 1. State Gating
-            // If player state isn't critical or injured, we shouldn't be interactable at all.
-            bool isCritical = RMSession.IsPlayerCritical(Revivee.ProfileId);
-            var state = RMSession.GetPlayerState(Revivee.ProfileId);
-            bool isRevived = state?.State == RMState.Revived;
-            
-            bool isInjured = false;
-            if (!isCritical && !isRevived && Revivee.HealthController != null)
+            // Disable bone colliders when an overlay (picker / loot screen) is active
+            if (HasActivePicker || _isLootScreenOpen)
             {
-                foreach (MedCategory cat in Enum.GetValues(typeof(MedCategory)))
-                {
-                    if (TeamMedical.PatientNeedsCategory(Revivee, cat))
-                    {
-                        isInjured = true;
-                        break;
-                    }
-                }
-            }
-            
-            bool shouldEnable = isCritical || isRevived || isInjured;
-
-            if (!shouldEnable || HasActivePicker)
-            {
-                if (_collider.enabled) _collider.enabled = false;
+                SetCollidersEnabled(false);
                 return;
             }
 
-            // 2. Distance Gating
-            Transform camTransform = Camera.main?.transform;
-            if (camTransform == null) return;
-
-            Vector3 camPos = camTransform.position;
-            Vector3 centerPos = _collider.transform.position; // Faster than bounds.center
-            float distSq = (centerPos - camPos).sqrMagnitude;
-
-            bool withinDistance = distSq <= INTERACTION_MAX_DISTANCE_SQ;
-            if (_collider.enabled != withinDistance)
-            {
-                _collider.enabled = withinDistance;
-            }
+            SetCollidersEnabled(true);
         }
 
         //====================[ Setup / Attachment ]====================
@@ -126,27 +126,83 @@ namespace KeepMeAlive.Components
             // Final safeguards against wrong owner/type and late AI initialization races.
             if (player.IsYourPlayer || player.IsAI || player.AIData?.IsAI == true) yield break;
 
+            // Root GO holds the BodyInteractable component and serves as MedPicker anchor
             var go = new GameObject("Body Interactable");
-            // Set parent to the root player object to have predictable local coordinates (Y is up, Z is forward)
             go.transform.SetParent(player.gameObject.transform, false);
-            
-            // Position the transform centrally (Y=0.9 is half of 1.8m average height)
             go.transform.localPosition = new Vector3(0f, 0.9f, 0f);
             go.transform.localRotation = Quaternion.identity;
             go.layer = LayerMask.NameToLayer("Interactive");
 
             var bi = go.AddComponent<BodyInteractable>();
             bi.Revivee = player;
+
+            int interactiveLayer = LayerMask.NameToLayer("Interactive");
+
+            // Clone chest+stomach hitbox colliders onto bone transforms
+            foreach (BodyPartCollider bpc in player.PlayerBones.BodyPartColliders)
+            {
+                if (bpc == null || bpc.Collider == null) continue;
+                if (!ColliderWhitelist.Contains(bpc.BodyPartColliderType)) continue;
+
+                var childGo = new GameObject($"BI_{bpc.BodyPartColliderType}");
+                childGo.transform.SetParent(bpc.Collider.transform, false);
+                childGo.transform.localPosition = Vector3.zero;
+                childGo.transform.localRotation = Quaternion.identity;
+                childGo.layer = interactiveLayer;
+
+                Collider cloned = CloneColliderShape(bpc.Collider, childGo);
+                if (cloned == null) { UnityEngine.Object.Destroy(childGo); continue; }
+                cloned.isTrigger = false;
+                cloned.enabled = false;
+
+                var proxy = childGo.AddComponent<BodyInteractableProxy>();
+                proxy.Owner = bi;
+
+                bi._colliders.Add(cloned);
+            }
+
             Features.BodyInteractableRuntime.Register(player.ProfileId, bi);
-
-            var box = go.AddComponent<BoxCollider>();
-            box.isTrigger = false;
-            
-            // Pre-defined collider size covering head to toe
-            box.center = Vector3.zero;
-            box.size = new Vector3(0.8f, 1.8f, 0.8f);
-
             go.SetActive(true);
+
+            Plugin.LogSource.LogInfo($"[BodyInteractable] Created {bi._colliders.Count} mirrored colliders for player {player.ProfileId}");
+        }
+
+        //====================[ Collider Helpers ]====================
+        private static Collider CloneColliderShape(Collider source, GameObject target)
+        {
+            if (source is BoxCollider box)
+            {
+                var clone = target.AddComponent<BoxCollider>();
+                clone.center = box.center;
+                clone.size = box.size * MirroredColliderInflation;
+                return clone;
+            }
+            if (source is SphereCollider sphere)
+            {
+                var clone = target.AddComponent<SphereCollider>();
+                clone.center = sphere.center;
+                clone.radius = sphere.radius * MirroredColliderInflation;
+                return clone;
+            }
+            if (source is CapsuleCollider capsule)
+            {
+                var clone = target.AddComponent<CapsuleCollider>();
+                clone.center = capsule.center;
+                clone.radius = capsule.radius * MirroredColliderInflation;
+                clone.height = capsule.height * MirroredColliderInflation;
+                clone.direction = capsule.direction;
+                return clone;
+            }
+            return null;
+        }
+
+        private void SetCollidersEnabled(bool enabled)
+        {
+            for (int i = _colliders.Count - 1; i >= 0; i--)
+            {
+                if (_colliders[i] == null) { _colliders.RemoveAt(i); continue; }
+                if (_colliders[i].enabled != enabled) _colliders[i].enabled = enabled;
+            }
         }
 
         //====================[ Logic & Interaction ]====================
@@ -188,27 +244,41 @@ namespace KeepMeAlive.Components
             if (Revivee.IsAI || Revivee.AIData?.IsAI == true) return actions;
             if (RMSession.IsPlayerCritical(owner.Player.ProfileId)) return actions;
 
+            // During active revive progress we intentionally expose no actions.
+            // This prevents both revive/search and category picker interactions while settling.
+            if (RMSession.GetPlayerState(Revivee.ProfileId).State == RMState.Reviving) return actions;
+
             bool playerCritical = RMSession.IsPlayerCritical(Revivee.ProfileId);
 
             if (playerCritical)
             {
-                if (!RevivePolicy.IsEnabled(ReviveSource.Team)) return actions;
-
-                bool canRevive = KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value || Utils.HasReviveItem(owner.Player);
-                actions.Actions.Add(new ActionsTypesClass
+                if (RevivePolicy.IsEnabled(ReviveSource.Team))
                 {
-                    Action = () => OnRevive(owner),
-                    Name = PlayerFacingMessages.Interaction.ReviveAction,
-                    Disabled = !canRevive
-                });
+                    bool canRevive = SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED || Utils.HasReviveItem(owner.Player);
+                    actions.Actions.Add(new ActionsTypesClass
+                    {
+                        Action = () => OnRevive(owner),
+                        Name = PlayerFacingMessages.Interaction.ReviveAction,
+                        Disabled = !canRevive
+                    });
+                }
+
+                if (SyncedGameplayValues.ALLOW_LOOT_DOWNED_PLAYERS)
+                {
+                    actions.Actions.Add(new ActionsTypesClass
+                    {
+                        Action = () => OnLootDowned(owner),
+                        Name = PlayerFacingMessages.Interaction.SearchAction,
+                        Disabled = false
+                    });
+                }
             }
-            else
+            else if (SyncedGameplayValues.TEAM_HEAL_ENABLED)
             {
                 foreach (MedCategory cat in Enum.GetValues(typeof(MedCategory)))
                 {
                     MedCategory captured = cat;
                     bool patientNeeds = TeamMedical.PatientNeedsCategory(Revivee, captured);
-                    
                     if (!patientNeeds) continue; // Only show category if the patient needs healing for it
 
                     bool hasMeds = TeamMedical.HealerHasMedForCategory(owner.Player, captured);
@@ -224,6 +294,83 @@ namespace KeepMeAlive.Components
             return actions;
         }
 
+        //====================[ Loot Downed ]====================
+        public void OnLootDowned(GamePlayerOwner owner)
+        {
+            if (Revivee == null || owner?.Player == null) return;
+            if (!RMSession.IsPlayerCritical(Revivee.ProfileId)) return;
+
+            _isLootScreenOpen = true;
+            SetCollidersEnabled(false);
+
+            // Mark all downed player items as searched/known in the viewer's search controller
+            // so the loot screen allows interaction (bypasses GInterface215 search gate).
+            var searchCtrl = owner.Player.InventoryController.SearchController;
+            var playerSearch = searchCtrl as GClass2235;
+            var playerSearchCtrl = searchCtrl as PlayerSearchControllerClass;
+            foreach (Item item in Revivee.Equipment.GetAllItemsFromCollection())
+            {
+                // Mark searchable containers (rigs, backpacks) as searched
+                if (item is SearchableItemItemClass searchable)
+                    playerSearch?.HashSet_0.Add(searchable);
+
+                // Mark individual items as temporarily known
+                playerSearchCtrl?.SetItemAsTemporaryKnown(item);
+            }
+
+            LockEquipmentSlots();
+            RMSession.PlayerStateChanged += OnReviveeStateChanged;
+
+            owner.ShowInventoryScreenLoot(Revivee.Equipment, () =>
+            {
+                UnlockEquipmentSlots();
+                RMSession.PlayerStateChanged -= OnReviveeStateChanged;
+                _isLootScreenOpen = false;
+                owner.Player.SetInventoryOpened(false);
+            });
+        }
+
+        private void OnReviveeStateChanged(string playerId, RMState oldState, RMState newState)
+        {
+            if (Revivee == null || playerId != Revivee.ProfileId) return;
+            if (oldState != RMState.BleedingOut) return;
+
+            // Player is no longer downed — force-close the loot screen
+            UnlockEquipmentSlots();
+            RMSession.PlayerStateChanged -= OnReviveeStateChanged;
+            _isLootScreenOpen = false;
+        }
+
+        //====================[ Equipment Slot Locking ]====================
+        private void LockEquipmentSlots()
+        {
+            if (Revivee?.Equipment == null || SlotLockedField == null) return;
+
+            foreach (Slot slot in Revivee.Equipment.Slots)
+            {
+                if (slot == null || slot.Locked || slot.ContainedItem == null) continue;
+                SlotLockedField.SetValue(slot, true);
+                _slotsWeLockedForLoot.Add(slot);
+            }
+        }
+
+        private void UnlockEquipmentSlots()
+        {
+            if (SlotLockedField == null || _slotsWeLockedForLoot.Count == 0) return;
+
+            foreach (Slot slot in _slotsWeLockedForLoot)
+                SlotLockedField.SetValue(slot, false);
+
+            _slotsWeLockedForLoot.Clear();
+        }
+
+        private void OnDestroy()
+        {
+            UnlockEquipmentSlots();
+            RMSession.PlayerStateChanged -= OnReviveeStateChanged;
+            _colliders.Clear();
+        }
+
         public void OpenFilteredMedPicker(GamePlayerOwner owner, MedCategory category)
         {
             try
@@ -231,7 +378,7 @@ namespace KeepMeAlive.Components
                 if (Revivee == null || RMSession.IsPlayerCritical(Revivee.ProfileId)) return;
 
                 HasActivePicker = true;
-                if (_collider != null) _collider.enabled = false;
+                SetCollidersEnabled(false);
 
                 // Spawn MedPicker with same bounds as the full body collider
                 var pickerGo = InteractableBuilder<MedPickerInteractable>.Build(
@@ -240,7 +387,7 @@ namespace KeepMeAlive.Components
                     new Vector3(0.8f, 1.8f, 0.8f), 
                     transform, 
                     null, 
-                    KeepMeAliveSettings.FREE_TEAM_HEALING.Value
+                    SyncedGameplayValues.FREE_TEAM_HEALING
                 );
 
                 var picker = pickerGo?.GetComponent<MedPickerInteractable>();

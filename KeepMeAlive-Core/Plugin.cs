@@ -42,6 +42,7 @@ namespace KeepMeAlive
             LogSource.LogInfo("Revival plugin loaded!");
 
             KeepMeAliveSettings.Init(Config);
+            SyncedServerConfigStore.Initialize();
 
             // Register ReviveItemCooldown effect types into EFT's reflection-based type registries.
             // Must run before any health controllers are instantiated.
@@ -66,6 +67,7 @@ namespace KeepMeAlive
             new SpecialSlotReviveItemPatch().Enable();
             new ReviveItemCooldownIconPatch().Enable();
             new FikaOverlayPatch().Enable();
+            new DownedPlayerLootPatch().Enable();
             new InventoryScreenInputBlockPatch().Enable();
             new SilentInventoryCommandBlockPatch().Enable();
         }

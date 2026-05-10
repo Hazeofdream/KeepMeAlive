@@ -68,9 +68,8 @@ namespace KeepMeAlive.Features
 
                 if (player.IsYourPlayer)
                 {
-                    // Restore moment: unblock UI and return weapon immediately for both Self and Team revive.
                     DownedUiBlocker.SetBlocked(false);
-                    PlayerRestorations.RestorePlayerWeapon(player);
+                    ReviveDebug.Log("PostRevival_InputsRestored", player.ProfileId, player.IsYourPlayer, "weapon/movement restoration deferred to StartInvulnerabilityPeriod");
                 }
 
                 if (player.IsYourPlayer && applyFinalize)
@@ -93,19 +92,32 @@ namespace KeepMeAlive.Features
             try
             {
                 var source = (ReviveSource)st.ReviveRequestedSource;
+                ReviveDebug.Log("InvulnStart_Enter", player.ProfileId, player.IsYourPlayer, $"state={st.State} hasInit={st.HasInitializedInvulnerability}");
                 st.InvulnerabilityTimer = PostReviveEffects.GetInvulnDuration(source);
 
-                // Release input blocks, then restore movement (clears prone, re-enables sprint, restores walk speed).
-                DownedMovementController.ReleaseProne(player);
-                DownedMovementController.ReleaseEmptyHands(player);
-                PlayerRestorations.RestorePlayerMovement(player, forceStandingPose: true);
-                DownedMovementController.ReattachMovementHooks(player);
-
-                // Then clamp to the invulnerability-period speed cap.
-                if (st.OriginalMovementSpeed > 0)
+                if (!st.HasInitializedInvulnerability)
                 {
-                    float invulnSpeed = st.OriginalMovementSpeed * PostReviveEffects.GetInvulnSpeedMultiplier(source);
-                    player.Physical.WalkSpeedLimit = invulnSpeed;
+                    st.HasInitializedInvulnerability = true;
+
+                    // Centralized restore point: release downed locks, then restore weapon and movement.
+                    DownedMovementController.ReleaseProne(player);
+                    DownedMovementController.ReleaseEmptyHands(player);
+                    PlayerRestorations.RestorePlayerWeapon(player);
+                    PlayerRestorations.RestorePlayerMovement(player, forceStandingPose: true);
+                    DownedMovementController.ReattachMovementHooks(player);
+
+                    // Then clamp to the invulnerability-period speed cap.
+                    if (st.OriginalMovementSpeed > 0)
+                    {
+                        float invulnSpeed = st.OriginalMovementSpeed * PostReviveEffects.GetInvulnSpeedMultiplier(source);
+                        player.Physical.WalkSpeedLimit = invulnSpeed;
+                    }
+
+                    ReviveDebug.Log("InvulnStart_RestoreApplied", player.ProfileId, player.IsYourPlayer, $"speed={player.Physical?.WalkSpeedLimit}");
+                }
+                else
+                {
+                    ReviveDebug.Log("InvulnStart_SkipDuplicate", player.ProfileId, player.IsYourPlayer, "restore already initialized for this cycle");
                 }
 
                 if (player.IsYourPlayer)
@@ -115,6 +127,8 @@ namespace KeepMeAlive.Features
                     st.CriticalStateMainTimer?.Stop(); st.CriticalStateMainTimer = null;
                     VFX_UI.ObjectivePanel(Color.blue, VFX_UI.Position.BottomCenter, PlayerFacingMessages.PostRevive.InvulnerableObjective, PostReviveEffects.GetInvulnDuration(source));
                 }
+
+                ReviveDebug.Log("InvulnStart_Complete", player.ProfileId, player.IsYourPlayer, $"duration={st.InvulnerabilityTimer:F2}");
             }
             catch (Exception ex) { Plugin.LogSource.LogError($"[PostRevival] StartInvulnerabilityPeriod error: {ex.Message}"); }
         }

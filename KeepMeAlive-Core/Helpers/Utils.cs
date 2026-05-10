@@ -134,7 +134,7 @@ namespace KeepMeAlive.Helpers
                     return null;
                 }
 
-                string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID.Value;
+                string templateId = SyncedGameplayValues.REVIVAL_ITEM_ID;
                 foreach (var it in items)
                 {
                     if (it?.TemplateId == templateId)
@@ -200,7 +200,7 @@ namespace KeepMeAlive.Helpers
                 return false;
             }
 
-            string templateId = KeepMeAliveSettings.REVIVAL_ITEM_ID.Value;
+            string templateId = SyncedGameplayValues.REVIVAL_ITEM_ID;
             if (!string.Equals(reviveItem.TemplateId, templateId, StringComparison.Ordinal))
             {
                 Plugin.LogSource.LogWarning($"[{label}] Refusing to consume item {reviveItem.Id} tpl={reviveItem.TemplateId}; expected tpl={templateId}");
@@ -408,7 +408,9 @@ namespace KeepMeAlive.Helpers
         }
 
         // Apply a team-heal item via HealthController.ApplyItem.
-        // Does not force-discard on failure; meds remain in inventory if they could not be used.
+        // Temporarily swaps the item template's UseTime by the configured multiplier so that
+        // DoMedEffect bakes a scaled duration into the MedEffect.  Restore happens in the same
+        // synchronous call frame, so no other code path can observe the modified value.
         public static bool TryApplyTeamHeal(Player player, Item item, string contextLabel)
         {
             string label = string.IsNullOrEmpty(contextLabel) ? "ApplyItem" : contextLabel;
@@ -424,14 +426,43 @@ namespace KeepMeAlive.Helpers
                 return false;
             }
 
+            float multiplier = SyncedGameplayValues.TEAM_HEAL_USE_TIME_MULTIPLIER;
+            MedsTemplateClass medsTemplate = item.Template as MedsTemplateClass;
+            float originalUseTime = 0f;
+            bool swapped = false;
+
             try
             {
-                return player.HealthController.ApplyItem(item, EBodyPart.Common);
+                // Temporarily scale the template's UseTime before ApplyItem reads it.
+                if (medsTemplate != null && multiplier > 0f && Mathf.Abs(multiplier - 1f) > 0.001f)
+                {
+                    originalUseTime = medsTemplate.UseTime;
+                    medsTemplate.UseTime = originalUseTime * multiplier;
+                    swapped = true;
+                }
+
+                bool result = player.HealthController.ApplyItem(item, EBodyPart.Common);
+
+                // Match the animator playback speed so the animation length aligns with the effect.
+                if (result && swapped)
+                {
+                    TrySetUseSpeed(player, 1f / multiplier);
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
                 Plugin.LogSource.LogError($"[{label}] ApplyItem failed: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                // Always restore the original value, even if ApplyItem throws.
+                if (swapped && medsTemplate != null)
+                {
+                    medsTemplate.UseTime = originalUseTime;
+                }
             }
         }
 

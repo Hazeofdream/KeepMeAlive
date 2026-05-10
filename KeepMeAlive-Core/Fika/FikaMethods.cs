@@ -159,11 +159,11 @@ namespace KeepMeAlive.Fika
             Plugin.LogSource.LogDebug($"[Packet] BleedingOut: {packet.playerId} has {packet.timeRemaining}s left (remote player)");
 
             // Ghost mode uses profileId; must not gate behind ActiveHealthController check since remote host clients use ObservedHealthController.
-            if (KeepMeAliveSettings.GHOST_MODE.Value) GhostMode.EnterGhostModeById(packet.playerId);
+            if (SyncedGameplayValues.GHOST_MODE) GhostMode.EnterGhostModeById(packet.playerId);
 
             if (player != null)
             {
-                if (KeepMeAliveSettings.GOD_MODE.Value) GodMode.Enable(player);
+                if (SyncedGameplayValues.GOD_MODE) GodMode.Enable(player);
             }
             else
             {
@@ -254,7 +254,7 @@ namespace KeepMeAlive.Fika
                 playerState.RevivePromptTimer?.Stop();
                 playerState.RevivePromptTimer = null;
 
-                if (RevivePolicy.IsEnabled(ReviveSource.Self) && (KeepMeAliveSettings.NO_REVIVE_ITEM_REQUIRED.Value || Utils.HasReviveItem(reviveePlayer)))
+                if (RevivePolicy.IsEnabled(ReviveSource.Self) && (SyncedGameplayValues.NO_REVIVE_ITEM_REQUIRED || Utils.HasReviveItem(reviveePlayer)))
                 {
                     VFX_UI.ObjectivePanel(Color.blue, VFX_UI.Position.BottomCenter, PlayerFacingMessages.NetworkRevive.RevivePrompt(KeepMeAliveSettings.SELF_REVIVAL_KEY.Value));
                 }
@@ -473,7 +473,7 @@ namespace KeepMeAlive.Fika
             Player player = Utils.GetPlayerById(packet.playerId);
             if (player != null)
             {
-                if (KeepMeAliveSettings.GHOST_MODE.Value) GhostMode.ExitGhostMode(player);
+                if (SyncedGameplayValues.GHOST_MODE) GhostMode.ExitGhostMode(player);
                 GodMode.Disable(player);
 
                 if (packet.isDead)
@@ -602,8 +602,8 @@ namespace KeepMeAlive.Fika
                         st.KillOverride = false;
                         if (player != null)
                         {
-                            if (KeepMeAliveSettings.GHOST_MODE.Value) GhostMode.EnterGhostModeById(packet.playerId);
-                            if (KeepMeAliveSettings.GOD_MODE.Value)   GodMode.Enable(player);
+                            if (SyncedGameplayValues.GHOST_MODE) GhostMode.EnterGhostModeById(packet.playerId);
+                            if (SyncedGameplayValues.GOD_MODE)   GodMode.Enable(player);
                         }
                         break;
 
@@ -654,6 +654,8 @@ namespace KeepMeAlive.Fika
         //====================[ Raid Started — Attach Body Interactables ]====================
         private static void OnRaidStarted(FikaRaidStartedEvent e)
         {
+            SyncedServerConfigStore.EnsureSnapshot("raid-started");
+
             if (!global::Fika.Core.Main.Components.CoopHandler.TryGetCoopHandler(out var coopHandler))
             {
                 Plugin.LogSource.LogWarning("[OnRaidStarted] CoopHandler not available");

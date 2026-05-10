@@ -48,6 +48,8 @@ namespace KeepMeAlive.Components
         //====================[ Timers ]====================
         public float CriticalTimer { get; set; }
         public float InvulnerabilityTimer { get; set; }
+        // True once StartInvulnerabilityPeriod has executed restore-side effects for this cycle.
+        public bool HasInitializedInvulnerability { get; set; }
         public float CooldownTimer { get; set; }
         // Countdown until next periodic state resync broadcast. -1 triggers immediate send.
         public float ResyncCooldown { get; set; }
